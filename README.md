@@ -29,6 +29,7 @@
 |---|---|
 | `main.py` | 音声の取り込み、VAD による発話の切り出し、文字起こしと翻訳の実行、出力 |
 | `translate.py` | PLaMo 3 Translate による翻訳(`mlx-lm`) |
+| `config.py` | 設定ファイル `config.toml` の読み込みと既定値 |
 | `output.py` | Web 画面と OBS 用の小さな HTTP サーバー(SSE) |
 | `transcript.py` | 会議後の `.txt` / `.srt` の書き出し |
 | `sender.py` | 別の Mac で動かし、音声を LAN 越しに送る |
@@ -158,17 +159,34 @@ say -v Samantha -a "BlackHole 2ch" "Hello, this is a test"
 | `--jsonl` | 標準出力を JSON Lines にする |
 | `--out-dir DIR` | 保存先(デフォルト `transcripts`) |
 | `--no-record` | 保存しない |
+| `--config PATH` | 設定ファイル(省略時は `main.py` と同じ場所の `config.toml` があれば読む) |
 | `--list` | 音声デバイスの一覧を表示して終了 |
 | `--debug` | 文字起こしの信頼度などを stderr に表示 |
 
 `sender.py` のオプション: `--device NAME`(デフォルト `BlackHole`、`default` でマイク)、`--port N`(デフォルト 9999)。
 
-## 設定を変えたい場合
+## 設定ファイル
 
-コード内の定数です。
+`config.toml` に書いた項目だけが既定値を上書きします。ファイルが無ければ既定値で動きます。見本の `config.example.toml` をコピーし、変えたい行の `#` を外して書き換えてください。
 
-- `main.py`: `SILENCE_END_MS`(発話を区切る無音の長さ)、`MAX_SEGMENT_S`(最長の発話)、`WHISPER`(Whisper のモデル)、`HALLUCINATIONS`(捨てる定番フレーズ)
-- `translate.py`: `MODEL`(翻訳モデル。遅い場合は `pfnet/plamo-3-translate-2b-MLX-4bit`、品質重視なら `...-31b-MLX-4bit`)、`PAIR`(言語の組み合わせ)
+```
+cp config.example.toml config.toml
+```
+
+| 項目 | 既定値 | 説明 |
+|---|---|---|
+| `silence_end_ms` | `500` | この長さの無音で発話を確定する(ミリ秒) |
+| `max_segment_s` | `12.0` | 1 つの発話の最長(秒) |
+| `min_segment_s` | `0.4` | これより短い発話は捨てる(秒) |
+| `whisper_model` | `"mlx-community/whisper-large-v3-turbo"` | Whisper のモデル |
+| `hallucinations` | `["thank you", ...]` | 2 秒未満の発話がこれと一致したら捨てる定番フレーズ |
+| `translate_model` | `"pfnet/plamo-3-translate-8b-MLX-4bit"` | 翻訳モデル。遅い場合は `...-2b-MLX-4bit`、品質重視なら `...-31b-MLX-4bit` |
+| `pair` | `{ ja = "en", en = "ja" }` | 判定した言語 → 翻訳先の言語。ここに無い言語の発話は無視する |
+
+- 起動時に、読み込んだファイルのパスを表示します。
+- 項目名の書き間違いや型の違い(数値の欄に文字列など)は、起動時にエラーになります。
+- 別のファイルを使うときは `--config PATH` で指定します。
+- `config.toml` は `.gitignore` に入っているので、コミットされません。
 
 ## 注意点
 

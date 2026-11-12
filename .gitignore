@@ -8,3 +8,6 @@ transcripts/
 
 # 社内のパッケージプロキシの URL が入るため含めない(uv sync で作られる)
 uv.lock
+
+# 各自の設定(見本は config.example.toml)
+config.toml

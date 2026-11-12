@@ -12,24 +12,19 @@ import numpy as np
 import sounddevice as sd
 import webrtcvad
 
+import config
 import output
 from transcript import Recorder
-from translate import PAIR, Translator
+from translate import Translator
 
 SR = 16000
 FRAME_MS = 30
 FRAME = SR * FRAME_MS // 1000
-SILENCE_END_MS = 500
-MAX_SEGMENT_S = 12
-MIN_SEGMENT_S = 0.4
-WHISPER = "mlx-community/whisper-large-v3-turbo"
-
-# phrases Whisper tends to invent from noise or room echo
-HALLUCINATIONS = {"thank you", "thanks for watching", "you", "bye", "ご視聴ありがとうございました", "ありがとうございました"}
 
 segments = queue.Queue()
 args_debug = False
 jsonl = False
+cfg = config.Config()  # main() で config.toml の値に置き換える
 
 
 def find_device(name):
@@ -47,7 +42,7 @@ def segment(label, read_frame):
     def flush():
         nonlocal buf, voiced, silence
         audio = np.concatenate(buf) if buf else np.zeros(0, np.float32)
-        if voiced and len(audio) / SR >= MIN_SEGMENT_S:
+        if voiced and len(audio) / SR >= cfg.min_segment_s:
             end = time.time()
             segments.put((label, audio, end - len(audio) / SR, end))
         buf, voiced, silence = [], False, 0
@@ -61,9 +56,9 @@ def segment(label, read_frame):
                 silence += FRAME_MS
             if voiced or buf:
                 buf.append(frame.astype(np.float32) / 32768.0)
-            if voiced and silence >= SILENCE_END_MS:
+            if voiced and silence >= cfg.silence_end_ms:
                 flush()
-            elif len(buf) * FRAME_MS / 1000 >= MAX_SEGMENT_S:
+            elif len(buf) * FRAME_MS / 1000 >= cfg.max_segment_s:
                 flush()
             elif not voiced and len(buf) > 10:
                 buf = buf[-10:]  # keep a little lead-in before speech starts
@@ -108,11 +103,12 @@ def capture_remote(label, host, port):
 
 def worker(translator, session_t0, recorder):
     history = {}
+    hallucinations = {h.lower() for h in cfg.hallucinations}
     while True:
         label, audio, seg_start, seg_end = segments.get()
         t0 = time.time()
         r = mlx_whisper.transcribe(
-            audio, path_or_hf_repo=WHISPER, condition_on_previous_text=False
+            audio, path_or_hf_repo=cfg.whisper_model, condition_on_previous_text=False
         )
         t1 = time.time()
         text = r["text"].strip()
@@ -122,14 +118,14 @@ def worker(translator, session_t0, recorder):
             print(f"  [debug] {len(audio)/SR:.1f}s audio, asr {t1-t0:.1f}s, lang={lang}, "
                   f"no_speech={[round(s['no_speech_prob'],2) for s in segs]}, "
                   f"logprob={[round(s['avg_logprob'],2) for s in segs]}", file=sys.stderr)
-        if not text or lang not in PAIR:
+        if not text or lang not in cfg.pair:
             continue
         if segs and np.mean([s["no_speech_prob"] for s in segs]) > 0.6:
             continue
         # short, low-confidence fragments are almost always Whisper hallucinations
         if segs and len(audio) / SR < 2.5 and np.mean([s["avg_logprob"] for s in segs]) < -0.7:
             continue
-        if len(audio) / SR < 2.0 and text.strip(" .!。！").lower() in HALLUCINATIONS:
+        if len(audio) / SR < 2.0 and text.strip(" .!。！").lower() in hallucinations:
             continue
         ctx = history.get(label)
         out = translator.translate(text, lang, context=ctx)
@@ -162,12 +158,15 @@ def main():
                    help="receive the other side's audio from sender.py (via an SSH tunnel)")
     p.add_argument("--out-dir", default="transcripts", help="where to save .jsonl/.txt/.srt")
     p.add_argument("--no-record", action="store_true", help="do not save a transcript")
+    p.add_argument("--config", default="", metavar="PATH",
+                   help="settings file (default: config.toml next to main.py, if it exists)")
     a = p.parse_args()
-    global args_debug, jsonl
+    global args_debug, jsonl, cfg
     args_debug, jsonl = a.debug, a.jsonl
     if a.list:
         print(sd.query_devices())
         return
+    cfg, cfg_path = config.load(a.config or None)
 
     sources = {}
     if not a.no_mic:
@@ -179,12 +178,14 @@ def main():
         sources["相手"] = sys_dev
 
     log = (lambda *x: print(*x, file=sys.stderr, flush=True)) if jsonl else print
+    if cfg_path:
+        log(f"設定: {cfg_path}")
     if not a.no_web:
         output.start_server(a.port)
         log(f"Web: http://127.0.0.1:{a.port}/   OBS: http://127.0.0.1:{a.port}/caption")
     log("モデルを読み込み中...")
-    translator = Translator()
-    mlx_whisper.transcribe(np.zeros(SR, np.float32), path_or_hf_repo=WHISPER)  # warm up
+    translator = Translator(cfg.translate_model, cfg.pair)
+    mlx_whisper.transcribe(np.zeros(SR, np.float32), path_or_hf_repo=cfg.whisper_model)  # warm up
     recorder = None if a.no_record else Recorder(a.out_dir)
     session_t0 = time.time()
     threading.Thread(

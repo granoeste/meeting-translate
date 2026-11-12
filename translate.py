@@ -1,11 +1,10 @@
 from mlx_lm import load, stream_generate
 
-MODEL = "pfnet/plamo-3-translate-8b-MLX-4bit"
-PAIR = {"ja": "en", "en": "ja"}
-
 
 class Translator:
-    def __init__(self, model_id=MODEL):
+    def __init__(self, model_id, pair):
+        """pair: 判定した言語 → 翻訳先の言語(例: {"ja": "en", "en": "ja"})"""
+        self.pair = pair
         self.model, self.tokenizer = load(
             model_id,
             tokenizer_config={"trust_remote_code": True},
@@ -14,7 +13,7 @@ class Translator:
         )
 
     def translate(self, text, source_lang, context=None):
-        kwargs = {"target_lang": PAIR[source_lang], "source_lang": source_lang}
+        kwargs = {"target_lang": self.pair[source_lang], "source_lang": source_lang}
         if context:
             kwargs["context"] = context
         if kwargs["target_lang"] == "ja":

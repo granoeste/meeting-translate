@@ -1,0 +1,22 @@
+# 設定ファイルの見本です。config.toml にコピーし、変えたい行の # を外して値を書き換えてください。
+#   cp config.example.toml config.toml
+# 書いた項目だけが既定値を上書きします。下の値はすべて既定値です。
+
+# --- 発話の区切り(VAD) ---
+# この長さの無音で発話を確定する(ミリ秒)。短くすると訳が早く出るが、文の途中で切れやすくなる
+# silence_end_ms = 500
+# 1 つの発話の最長(秒)。これを超えると、話の途中でも区切る
+# max_segment_s = 12.0
+# これより短い発話は捨てる(秒)
+# min_segment_s = 0.4
+
+# --- 文字起こし(Whisper) ---
+# whisper_model = "mlx-community/whisper-large-v3-turbo"
+# Whisper が無音やノイズから作りがちな定番フレーズ。2 秒未満の発話がこれと一致したら捨てる(大文字小文字は区別しない)
+# hallucinations = ["thank you", "thanks for watching", "you", "bye", "ご視聴ありがとうございました", "ありがとうございました"]
+
+# --- 翻訳(PLaMo 3 Translate) ---
+# 遅い場合は "pfnet/plamo-3-translate-2b-MLX-4bit"、品質重視なら "pfnet/plamo-3-translate-31b-MLX-4bit"
+# translate_model = "pfnet/plamo-3-translate-8b-MLX-4bit"
+# 判定した言語 → 翻訳先の言語。ここに無い言語の発話は無視する
+# pair = { ja = "en", en = "ja" }
