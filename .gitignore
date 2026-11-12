@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# 会議の全文が平文で残るので、絶対にコミットしない
+transcripts/
+
+# 社内のパッケージプロキシの URL が入るため含めない(uv sync で作られる)
+uv.lock

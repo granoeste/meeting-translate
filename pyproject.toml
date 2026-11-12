@@ -1,0 +1,12 @@
+[project]
+name = "meeting-translate"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "mlx-lm>=0.32.2",
+    "mlx-whisper>=0.4.3",
+    "numba>=0.68.1",
+    "numpy>=2.4.6",
+    "sounddevice>=0.5.6",
+    "webrtcvad-wheels>=2.0.14.post1",
+]
