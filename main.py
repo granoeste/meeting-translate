@@ -25,6 +25,7 @@ segments = queue.Queue()
 args_debug = False
 jsonl = False
 cfg = config.Config()  # main() で config.toml の値に置き換える
+stopping = threading.Event()  # set on exit so capture() closes its stream
 
 
 def find_device(name):
@@ -70,7 +71,12 @@ def capture(label, device):
     with sd.InputStream(
         samplerate=SR, channels=1, dtype="int16", blocksize=FRAME, device=device
     ) as stream:
-        segment(label, lambda: stream.read(FRAME)[0][:, 0])
+        def read_frame():
+            if stopping.is_set():
+                raise EOFError  # segment() flushes and returns; `with` closes the stream
+            return stream.read(FRAME)[0][:, 0]
+
+        segment(label, read_frame)
 
 
 def capture_remote(label, host, port):
@@ -196,8 +202,10 @@ def main():
     threading.Thread(
         target=worker, args=(translator, session_t0, recorder), daemon=True
     ).start()
-    for label, dev in sources.items():
-        threading.Thread(target=capture, args=(label, dev), daemon=True).start()
+    captures = [threading.Thread(target=capture, args=(label, dev), daemon=True)
+                for label, dev in sources.items()]
+    for t in captures:
+        t.start()
     for label, spec in (("相手", a.remote), ("自分", a.remote_self)):
         if spec:
             host, _, port = spec.rpartition(":")
@@ -215,6 +223,11 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         pass
+    # Close the audio streams before the interpreter exits. A thread still blocked in
+    # stream.read() segfaults once sounddevice unloads PortAudio during shutdown.
+    stopping.set()
+    for t in captures:
+        t.join(timeout=2)
     if recorder:
         time.sleep(0.5)  # let an in-flight utterance finish writing
         txt, srt = recorder.close()

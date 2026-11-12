@@ -19,7 +19,7 @@ say -a "BlackHole 2ch" "テストです"             # 「相手」側にテス�
 テストとリンターは無い。構文の確認は `uv run python -m py_compile *.py`。
 
 - モデル(計 約 7.2GB)は初回起動時に Hugging Face からダウンロードされる。手元に無いときは、確認のためだけに `main.py` を起動しない。
-- モデル抜きで配線を確かめるときは、`main` を import する前に `sys.modules["mlx_whisper"]` と `sys.modules["mlx_lm"]` をスタブに差し替える。`main.main()` は `signal.signal` を呼ぶので、メインスレッドから呼ぶ。
+- モデル抜きで配線を確かめるときは、`main` を import する前に `sys.modules["mlx_whisper"]` と `sys.modules["mlx_lm"]` をスタブに差し替える。`main.main()` は `signal.signal` を呼ぶので、メインスレッドから呼ぶ。終了時の動き(Ctrl+C など)を確かめるときは、`import main` ではなく `runpy.run_path("main.py", run_name="__main__")` で本番と同じく起動する。import だと終了処理の順番が変わり、本番で起きる問題が再現しないことがある。
 
 ## 全体の流れ
 
@@ -34,6 +34,7 @@ say -a "BlackHole 2ch" "テストです"             # 「相手」側にテス�
 - **話者ラベル**の `"自分"` と `"相手"` は文字列そのままで使っている。`output.py` の Web 画面の JavaScript も `'自分'` で色を分けているので、変えるときは両方直す。
 - **`sender.py` の通信**はヘッダの無い生 PCM(16kHz・mono・int16、480 サンプルずつ)。`main.py` の `SR`/`FRAME` と合わせる。`sender.py` は会議用の Mac で単体で動かすので(PEP 723 のインライン依存)、プロジェクトの他のモジュールを import しない。
 - **設定**は `config.py` の `Config`(dataclass)が既定値で、`config.toml` に書いた項目だけが上書きする。型チェックは既定値の型を見ている。項目を足すときは、`Config`、`config.example.toml`、README の表の 3 か所を直す。`main.py` では、モジュールのグローバル変数 `cfg` を `main()` の中で読み込んだ値に置き換え、各関数は実行時に `cfg.xxx` を参照する。
+- **終了処理**: `main()` を抜ける前に `stopping` を立て、`capture` スレッドを join して音声ストリームを閉じる。`stream.read()` の中で待っているスレッドを残したまま終了すると、sounddevice が PortAudio を外した後にそのスレッドが落ちる(SIGSEGV)。PortAudio を使うスレッドを足すときも、同じく終了前に止める。
 - **翻訳**(`translate.py`)は、PLaMo の chat template に `source_lang`/`target_lang`/`context` を渡し、日本語にするときは `form="polite"` を付ける。`generate()` は遅かったので `stream_generate()` を使っている。
 
 ## 守ること
