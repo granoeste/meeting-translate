@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 DEFAULT_PATH = Path(__file__).with_name("config.toml")
+SPEAKERS = ("自分", "相手")  # main.py の話者ラベル
 
 
 @dataclass
@@ -18,6 +19,7 @@ class Config:
     ])
     translate_model: str = "pfnet/plamo-3-translate-8b-MLX-4bit"
     pair: dict = field(default_factory=lambda: {"ja": "en", "en": "ja"})  # 判定した言語 → 翻訳先
+    fixed_lang: dict = field(default_factory=dict)  # 話者ラベル("自分"/"相手") → 言語。指定した話者は言語を判定しない
 
 
 def load(path=None):
@@ -50,4 +52,10 @@ def load(path=None):
         if want in (int, float) and value <= 0:
             raise SystemExit(f"{p}: '{key}' は正の数で指定してください(値: {value!r})")
         setattr(cfg, key, value)
+
+    for who, lang in cfg.fixed_lang.items():
+        if who not in SPEAKERS:
+            raise SystemExit(f"{p}: 'fixed_lang' の話者は {' / '.join(SPEAKERS)} で指定してください(値: {who!r})")
+        if lang not in cfg.pair:
+            raise SystemExit(f"{p}: 'fixed_lang' の言語 {lang!r} が 'pair' にありません")
     return cfg, p

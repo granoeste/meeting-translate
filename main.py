@@ -107,12 +107,17 @@ def worker(translator, session_t0, recorder):
     while True:
         label, audio, seg_start, seg_end = segments.get()
         t0 = time.time()
+        fixed = cfg.fixed_lang.get(label)
         r = mlx_whisper.transcribe(
-            audio, path_or_hf_repo=cfg.whisper_model, condition_on_previous_text=False
+            audio, path_or_hf_repo=cfg.whisper_model, condition_on_previous_text=False,
+            language=fixed,
         )
         t1 = time.time()
         text = r["text"].strip()
-        lang = r.get("language")
+        lang = fixed or r.get("language")
+        # 日本語の発音の英語は ja と誤判定されやすい。本文が英字だけなら en に直す
+        if not fixed and lang == "ja" and "en" in cfg.pair and text.isascii() and any(c.isalpha() for c in text):
+            lang = "en"
         segs = r.get("segments") or []
         if args_debug:
             print(f"  [debug] {len(audio)/SR:.1f}s audio, asr {t1-t0:.1f}s, lang={lang}, "

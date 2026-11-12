@@ -20,3 +20,5 @@
 # translate_model = "pfnet/plamo-3-translate-8b-MLX-4bit"
 # 判定した言語 → 翻訳先の言語。ここに無い言語の発話は無視する
 # pair = { ja = "en", en = "ja" }
+# 話者ごとに言語を固定する(言語の自動判定をしない)。話者は "自分" か "相手"。例: 相手は常に英語
+# fixed_lang = { "相手" = "en" }
