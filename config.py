@@ -5,6 +5,7 @@ from pathlib import Path
 
 DEFAULT_PATH = Path(__file__).with_name("config.toml")
 SPEAKERS = ("自分", "相手")  # main.py の話者ラベル
+NON_POSITIVE = ("short_min_logprob",)  # 0 以下の値を取る項目(それ以外の数値は正の数)
 
 
 @dataclass
@@ -14,6 +15,10 @@ class Config:
     soft_silence_ms: int = 150
     max_segment_s: float = 6.0  # 1 つの発話の最長。超えたら直前 1 秒の最も静かな所で区切る
     min_segment_s: float = 0.4  # これより短い発話は捨てる
+    merge_fragments: bool = True  # 文の途中で終わった発話は、次の発話と結合してから訳す
+    merge_wait_s: float = 4.0  # 結合のために待つ最長の時間。次の発話が来なければ、そのまま訳す
+    merge_max_s: float = 12.0  # 結合した発話がこれより長くなったら、文が終わっていなくても訳す
+    short_min_logprob: float = -1.0  # 2.5 秒未満の発話の平均 logprob がこれより低ければ、ハルシネーションとして捨てる(0 以下)
     whisper_model: str = "mlx-community/whisper-large-v3-turbo"
     # Whisper が無音やノイズから作りがちな定番フレーズ
     hallucinations: list = field(default_factory=lambda: [
@@ -51,7 +56,10 @@ def load(path=None):
             value = float(value)
         if type(value) is not want:
             raise SystemExit(f"{p}: '{key}' は {want.__name__} で指定してください(値: {value!r})")
-        if want in (int, float) and value <= 0:
+        if key in NON_POSITIVE:
+            if value > 0:
+                raise SystemExit(f"{p}: '{key}' は 0 以下の数で指定してください(値: {value!r})")
+        elif want in (int, float) and value <= 0:
             raise SystemExit(f"{p}: '{key}' は正の数で指定してください(値: {value!r})")
         setattr(cfg, key, value)
 

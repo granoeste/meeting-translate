@@ -36,6 +36,7 @@
 | `check_audio.py` | BlackHole とマイクの音声の確認(ループバック判定、レベルメーター) |
 
 - 発話の区切りは、300ms の無音で確定します。3 秒を超えた発話は 150ms の短い間でも区切り、6 秒に達したら直前 1 秒の最も静かな所で区切ります。長く切れ目なく話す場面でも、字幕が出るまでの待ちは約 8 秒以内に収まります。
+- 区切りで文の途中で終わった発話(末尾が `. ? ! 。` でないもの。`...` で終わるものも含む)は、すぐには訳さず、次の発話と結合してから訳します。次が `merge_wait_s`(既定 4 秒)以内に来なければ、そのまま訳します。訳は自然になりますが、結合した発話は、そのぶん字幕が遅れます(実測で、話し始めてからの待ちの中央値が約 5 秒から約 7 秒に増えました)。`merge_fragments = false` で無効にできます。
 - Whisper が無音やノイズから作ってしまう文(「Thank you.」など)は、短くて信頼度が低い場合に捨てます。完全には防げません。
 - PLaMo のモデルコード(`modeling_plamo_mlx.py`)は Hugging Face のリポジトリにあり、`trust_remote_code=True` で読み込みます。公式の手順ですが、コードを実行することになります。
 
@@ -167,9 +168,10 @@ say -v Samantha -a "BlackHole 2ch" "Hello, this is a test"
 | `--jsonl` | 標準出力を JSON Lines にする |
 | `--out-dir DIR` | 保存先(デフォルト `transcripts`) |
 | `--no-record` | 保存しない |
+| `--save-audio` | 入力ごとの生の音声を `--out-dir` に `.wav` で保存する(「言葉が抜ける」などの問題を、あとで再現して調べるため)。会議の音声そのものが残るので、扱いに注意 |
 | `--config PATH` | 設定ファイル(省略時は `main.py` と同じ場所の `config.toml` があれば読む) |
 | `--list` | 音声デバイスの一覧を表示して終了 |
-| `--debug` | 文字起こしの信頼度などを stderr に表示 |
+| `--debug` | 文字起こしの信頼度、遅延、フィルタで捨てた発話とその理由を stderr に表示 |
 
 `sender.py` のオプション: `--device NAME`(デフォルト `BlackHole`、`default` でマイク)、`--port N`(デフォルト 9999)。
 
@@ -188,7 +190,11 @@ cp config.example.toml config.toml
 | `soft_silence_ms` | `150` | 上の条件で使う短い間(ミリ秒) |
 | `max_segment_s` | `6.0` | 1 つの発話の最長(秒)。超えたら直前 1 秒の最も静かな所で区切る |
 | `min_segment_s` | `0.4` | これより短い発話は捨てる(秒) |
+| `merge_fragments` | `true` | 文の途中で終わった発話は、次の発話と結合してから訳す |
+| `merge_wait_s` | `4.0` | 結合のために次の発話を待つ最長の時間(秒)。来なければ、そのまま訳す |
+| `merge_max_s` | `12.0` | 結合した発話がこの長さ(秒)を超えたら、文が終わっていなくても訳す |
 | `whisper_model` | `"mlx-community/whisper-large-v3-turbo"` | Whisper のモデル |
+| `short_min_logprob` | `-1.0` | 2.5 秒未満の発話の平均 logprob がこれより低ければ、ハルシネーションとして捨てる(0 以下)。小さくすると本物の短い発話が残りやすく、大きくすると誤認識を捨てやすい |
 | `hallucinations` | `["thank you", ...]` | 2 秒未満の発話がこれと一致したら捨てる定番フレーズ |
 | `translate_model` | `"pfnet/plamo-3-translate-8b-MLX-4bit"` | 翻訳モデル。遅い場合は `...-2b-MLX-4bit`、品質重視なら `...-31b-MLX-4bit` |
 | `pair` | `{ ja = "en", en = "ja" }` | 判定した言語 → 翻訳先の言語。ここに無い言語の発話は無視する |

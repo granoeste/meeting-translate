@@ -25,7 +25,7 @@ say -a "BlackHole 2ch" "テストです"             # 「相手」側にテス�
 
 1. 音声源ごとにスレッドを立てる(`main.py`)。ローカルのデバイスは `capture()`(sounddevice)、別 Mac の `sender.py` からは `capture_remote()`(TCP、切断時は自動で再接続)。
 2. どちらも `segment()` に 30ms(16kHz・mono・int16 で 480 サンプル)のフレームを渡す。webrtcvad で発話に区切り、グローバルの `segments` キューに `(話者ラベル, 音声, 開始, 終了)` を積む。
-3. ワーカースレッドは 1 本だけ。Whisper で文字起こしし、ハルシネーション対策のフィルタ(`no_speech_prob`、短く低信頼度の断片、定番フレーズ)を通す。そのあと `Translator` で翻訳する。直前の同じ話者の発話を `context` として渡す。
+3. ワーカースレッドは 1 本だけ。Whisper で文字起こしし、ハルシネーション対策のフィルタ(`no_speech_prob`、短く低信頼度の断片、定番フレーズ)を通す。そのあと `Translator` で翻訳する。直前の同じ話者の発話を `context` として渡す。末尾が文末で終わらない発話は `pending` に保留し、次の発話(同じ話者・同じ言語)と結合してから訳す(`merge_wait_s` を過ぎたらそのまま訳す。終了時は `segments` に `None` を入れて、保留分を訳させる)。
 4. 結果のイベントを `output.publish()`(Web/OBS への SSE 配信)と `Recorder.write()`(`.jsonl` に追記)と標準出力に出す。終了時(Ctrl+C / SIGTERM)に `.txt` と `.srt` を書き出す。
 
 複数のファイルにまたがる約束事:

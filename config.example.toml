@@ -12,10 +12,19 @@
 # max_segment_s = 6.0
 # これより短い発話は捨てる(秒)
 # min_segment_s = 0.4
+# 文の途中で終わった発話(末尾が . ? ! 。で終わらない)は、次の発話と結合してから訳す。訳は自然になるが、その分だけ字幕が遅れる
+# merge_fragments = true
+# 結合のために次の発話を待つ最長の時間(秒)。来なければ、そのまま訳す
+# merge_wait_s = 4.0
+# 結合した発話がこの長さ(秒)を超えたら、文が終わっていなくても訳す
+# merge_max_s = 12.0
 
 # --- 文字起こし(Whisper) ---
 # whisper_model = "mlx-community/whisper-large-v3-turbo"
 # Whisper が無音やノイズから作りがちな定番フレーズ。2 秒未満の発話がこれと一致したら捨てる(大文字小文字は区別しない)
+# 2.5 秒未満の発話の平均 logprob がこれより低ければ、ハルシネーションとして捨てる(0 以下)。
+# 小さくする(-1.5 など)と本物の短い発話が残りやすく、大きくする(-0.7 など)と誤認識を捨てやすい
+# short_min_logprob = -1.0
 # hallucinations = ["thank you", "thanks for watching", "you", "bye", "ご視聴ありがとうございました", "ありがとうございました"]
 
 # --- 翻訳(PLaMo 3 Translate) ---

@@ -6,6 +6,8 @@ import socket
 import sys
 import threading
 import time
+import wave
+from pathlib import Path
 
 import mlx_whisper
 import numpy as np
@@ -24,6 +26,7 @@ FRAME = SR * FRAME_MS // 1000
 segments = queue.Queue()
 args_debug = False
 jsonl = False
+audio_dir = None  # --save-audio のとき、入力音声の wav を書き出すディレクトリ
 cfg = config.Config()  # main() で config.toml の値に置き換える
 stopping = threading.Event()  # set on exit so capture() closes its stream
 
@@ -39,6 +42,13 @@ def segment(label, read_frame):
     """Cut a stream of FRAME-sized int16 frames into utterances with VAD, queue them."""
     vad = webrtcvad.Vad(2)
     buf, voiced, silence = [], False, 0
+    wav = None
+    if audio_dir:
+        name = {"自分": "self", "相手": "other"}.get(label, label)
+        wav = wave.open(str(audio_dir / f"{time.strftime('%Y%m%d-%H%M%S')}-{name}.wav"), "wb")
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(SR)
 
     def flush(keep=0):
         """buf を発話として確定する。keep が正なら、末尾の keep フレームは次の発話に回す"""
@@ -63,6 +73,8 @@ def segment(label, read_frame):
     try:
         while True:
             frame = read_frame()
+            if wav:
+                wav.writeframes(frame.tobytes())
             if vad.is_speech(frame.tobytes(), SR):
                 voiced, silence = True, 0
             else:
@@ -80,6 +92,9 @@ def segment(label, read_frame):
                 buf = buf[-10:]  # keep a little lead-in before speech starts
     except EOFError:
         flush()  # the stream ended mid-utterance
+    finally:
+        if wav:
+            wav.close()
 
 
 def capture(label, device):
@@ -122,11 +137,67 @@ def capture_remote(label, host, port):
         print(f"{label}: 切断されました。再接続します", file=sys.stderr, flush=True)
 
 
+def drop(why, text):
+    if args_debug:
+        print(f"  [debug] dropped ({why}): {text!r}", file=sys.stderr)
+
+
+FINAL_PUNCT = (".", "?", "!", "。", "？", "！")
+ELLIPSIS = ("...", "…")
+
+
+def is_complete(text):
+    t = text.rstrip()
+    return t.endswith(FINAL_PUNCT) and not t.endswith(ELLIPSIS)
+
+
+def join_fragments(head, tail, lang):
+    head = head.rstrip()
+    for e in ELLIPSIS:
+        if head.endswith(e):
+            head = head[: -len(e)].rstrip()
+    return head + ("" if lang == "ja" else " ") + tail
+
+
 def worker(translator, session_t0, recorder):
     history = {}
+    pending = {}  # 話者 -> 文の途中で終わった発話。次の発話と結合してから訳す
     hallucinations = {h.lower() for h in cfg.hallucinations}
+
+    def emit(label, it):
+        t1 = time.time()
+        out = translator.translate(it["text"], it["lang"], context=history.get(label))
+        history[label] = it["text"]
+        ev = output.publish(
+            label, it["lang"], it["text"], out,
+            start=max(0.0, it["start"] - session_t0), end=max(0.0, it["end"] - session_t0),
+        )
+        if recorder:
+            recorder.write(ev)
+        if jsonl:
+            print(json.dumps(ev, ensure_ascii=False), flush=True)
+        else:
+            print(f"[{label}] ({it['lang']}) {it['text']}\n    -> {out}   (asr {it['asr']:.1f}s, mt {time.time() - t1:.1f}s)\n")
+        if args_debug:
+            now = time.time()
+            print(f"  [debug] delay: first word {now - it['start']:.1f}s, last word {now - it['end']:.1f}s, "
+                  f"audio {it['end'] - it['start']:.1f}s", file=sys.stderr)
+
     while True:
-        label, audio, seg_start, seg_end = segments.get()
+        timeout = None
+        if pending:
+            timeout = max(0.0, min(p["due"] for p in pending.values()) - time.time())
+        try:
+            job = segments.get(timeout=timeout)
+        except queue.Empty:  # 次の発話が来なかった。保留した断片をそのまま訳す
+            for label in [l for l, p in pending.items() if p["due"] <= time.time()]:
+                emit(label, pending.pop(label))
+            continue
+        if job is None:  # 終了の合図。保留中の発話を訳して終わる
+            for label in list(pending):
+                emit(label, pending.pop(label))
+            return
+        label, audio, seg_start, seg_end = job
         t0 = time.time()
         fixed = cfg.fixed_lang.get(label)
         r = mlx_whisper.transcribe(
@@ -145,31 +216,32 @@ def worker(translator, session_t0, recorder):
                   f"no_speech={[round(s['no_speech_prob'],2) for s in segs]}, "
                   f"logprob={[round(s['avg_logprob'],2) for s in segs]}", file=sys.stderr)
         if not text or lang not in cfg.pair:
+            drop(f"empty or lang={lang}", text)
             continue
         if segs and np.mean([s["no_speech_prob"] for s in segs]) > 0.6:
+            drop("no_speech_prob > 0.6", text)
             continue
         # short, low-confidence fragments are almost always Whisper hallucinations
-        if segs and len(audio) / SR < 2.5 and np.mean([s["avg_logprob"] for s in segs]) < -0.7:
+        if segs and len(audio) / SR < 2.5 and np.mean([s["avg_logprob"] for s in segs]) < cfg.short_min_logprob:
+            drop("short and low confidence", text)
             continue
         if len(audio) / SR < 2.0 and text.strip(" .!。！").lower() in hallucinations:
+            drop("hallucination phrase", text)
             continue
-        ctx = history.get(label)
-        out = translator.translate(text, lang, context=ctx)
-        history[label] = text
-        ev = output.publish(
-            label, lang, text, out,
-            start=max(0.0, seg_start - session_t0), end=max(0.0, seg_end - session_t0),
-        )
-        if recorder:
-            recorder.write(ev)
-        if jsonl:
-            print(json.dumps(ev, ensure_ascii=False), flush=True)
+
+        it = {"text": text, "lang": lang, "start": seg_start, "end": seg_end, "asr": t1 - t0}
+        prev = pending.pop(label, None)
+        if prev and prev["lang"] != lang:
+            emit(label, prev)
+            prev = None
+        if prev:
+            it = {"text": join_fragments(prev["text"], text, lang), "lang": lang,
+                  "start": prev["start"], "end": seg_end, "asr": prev["asr"] + it["asr"]}
+        if not cfg.merge_fragments or is_complete(it["text"]) or it["end"] - it["start"] >= cfg.merge_max_s:
+            emit(label, it)
         else:
-            print(f"[{label}] ({lang}) {text}\n    -> {out}   (asr {t1 - t0:.1f}s, mt {time.time() - t1:.1f}s)\n")
-        if args_debug:
-            now = time.time()
-            print(f"  [debug] delay: first word {now - seg_start:.1f}s, last word {now - seg_end:.1f}s, "
-                  f"audio {seg_end - seg_start:.1f}s", file=sys.stderr)
+            it["due"] = time.time() + cfg.merge_wait_s
+            pending[label] = it
 
 
 def main():
@@ -188,15 +260,20 @@ def main():
                    help="receive the other side's audio from sender.py (via an SSH tunnel)")
     p.add_argument("--out-dir", default="transcripts", help="where to save .jsonl/.txt/.srt")
     p.add_argument("--no-record", action="store_true", help="do not save a transcript")
+    p.add_argument("--save-audio", action="store_true",
+                   help="also save each input's raw audio as .wav in --out-dir (to reproduce problems offline)")
     p.add_argument("--config", default="", metavar="PATH",
                    help="settings file (default: config.toml next to main.py, if it exists)")
     a = p.parse_args()
-    global args_debug, jsonl, cfg
+    global args_debug, jsonl, cfg, audio_dir
     args_debug, jsonl = a.debug, a.jsonl
     if a.list:
         print(sd.query_devices())
         return
     cfg, cfg_path = config.load(a.config or None)
+    if a.save_audio:
+        audio_dir = Path(a.out_dir)
+        audio_dir.mkdir(parents=True, exist_ok=True)
 
     sources = {}
     if not a.no_mic:
@@ -218,9 +295,10 @@ def main():
     mlx_whisper.transcribe(np.zeros(SR, np.float32), path_or_hf_repo=cfg.whisper_model)  # warm up
     recorder = None if a.no_record else Recorder(a.out_dir)
     session_t0 = time.time()
-    threading.Thread(
+    worker_thread = threading.Thread(
         target=worker, args=(translator, session_t0, recorder), daemon=True
-    ).start()
+    )
+    worker_thread.start()
     captures = [threading.Thread(target=capture, args=(label, dev), daemon=True)
                 for label, dev in sources.items()]
     for t in captures:
@@ -247,8 +325,9 @@ def main():
     stopping.set()
     for t in captures:
         t.join(timeout=2)
+    segments.put(None)  # worker に、キューと保留中の発話を訳して終わるよう伝える
+    worker_thread.join(timeout=15)
     if recorder:
-        time.sleep(0.5)  # let an in-flight utterance finish writing
         txt, srt = recorder.close()
         log(f"\n保存しました:\n  {txt}\n  {srt}")
 
