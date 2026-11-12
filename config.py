@@ -9,8 +9,10 @@ SPEAKERS = ("自分", "相手")  # main.py の話者ラベル
 
 @dataclass
 class Config:
-    silence_end_ms: int = 500  # この長さの無音で発話を区切る
-    max_segment_s: float = 12.0  # 1 つの発話の最長
+    silence_end_ms: int = 300  # この長さの無音で発話を区切る
+    soft_segment_s: float = 3.0  # 発話がこれより長くなったら、soft_silence_ms の短い間でも区切る
+    soft_silence_ms: int = 150
+    max_segment_s: float = 6.0  # 1 つの発話の最長。超えたら直前 1 秒の最も静かな所で区切る
     min_segment_s: float = 0.4  # これより短い発話は捨てる
     whisper_model: str = "mlx-community/whisper-large-v3-turbo"
     # Whisper が無音やノイズから作りがちな定番フレーズ

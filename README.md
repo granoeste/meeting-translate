@@ -35,7 +35,7 @@
 | `sender.py` | 別の Mac で動かし、音声を LAN 越しに送る |
 | `check_audio.py` | BlackHole とマイクの音声の確認(ループバック判定、レベルメーター) |
 
-- 発話の区切りは、500ms の無音で確定します。1 つの発話は最長 12 秒です。
+- 発話の区切りは、300ms の無音で確定します。3 秒を超えた発話は 150ms の短い間でも区切り、6 秒に達したら直前 1 秒の最も静かな所で区切ります。長く切れ目なく話す場面でも、字幕が出るまでの待ちは約 8 秒以内に収まります。
 - Whisper が無音やノイズから作ってしまう文(「Thank you.」など)は、短くて信頼度が低い場合に捨てます。完全には防げません。
 - PLaMo のモデルコード(`modeling_plamo_mlx.py`)は Hugging Face のリポジトリにあり、`trust_remote_code=True` で読み込みます。公式の手順ですが、コードを実行することになります。
 
@@ -175,8 +175,10 @@ cp config.example.toml config.toml
 
 | 項目 | 既定値 | 説明 |
 |---|---|---|
-| `silence_end_ms` | `500` | この長さの無音で発話を確定する(ミリ秒) |
-| `max_segment_s` | `12.0` | 1 つの発話の最長(秒) |
+| `silence_end_ms` | `300` | この長さの無音で発話を確定する(ミリ秒) |
+| `soft_segment_s` | `3.0` | 発話がこの長さ(秒)を超えたら、`soft_silence_ms` の短い間でも区切る |
+| `soft_silence_ms` | `150` | 上の条件で使う短い間(ミリ秒) |
+| `max_segment_s` | `6.0` | 1 つの発話の最長(秒)。超えたら直前 1 秒の最も静かな所で区切る |
 | `min_segment_s` | `0.4` | これより短い発話は捨てる(秒) |
 | `whisper_model` | `"mlx-community/whisper-large-v3-turbo"` | Whisper のモデル |
 | `hallucinations` | `["thank you", ...]` | 2 秒未満の発話がこれと一致したら捨てる定番フレーズ |

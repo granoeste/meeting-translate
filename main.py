@@ -40,13 +40,25 @@ def segment(label, read_frame):
     vad = webrtcvad.Vad(2)
     buf, voiced, silence = [], False, 0
 
-    def flush():
+    def flush(keep=0):
+        """buf を発話として確定する。keep が正なら、末尾の keep フレームは次の発話に回す"""
         nonlocal buf, voiced, silence
-        audio = np.concatenate(buf) if buf else np.zeros(0, np.float32)
+        cut = len(buf) - keep
+        audio = np.concatenate(buf[:cut]) if cut > 0 else np.zeros(0, np.float32)
         if voiced and len(audio) / SR >= cfg.min_segment_s:
-            end = time.time()
+            end = time.time() - keep * FRAME_MS / 1000
             segments.put((label, audio, end - len(audio) / SR, end))
-        buf, voiced, silence = [], False, 0
+        buf = buf[cut:]
+        if keep:
+            silence = 0  # 話はまだ続いている
+        else:
+            voiced, silence = False, 0
+
+    def quietest_tail():
+        """末尾 1 秒のうち最も静かなフレームから後ろのフレーム数。単語の途中で切るのを避ける"""
+        n = min(len(buf), 1000 // FRAME_MS)
+        rms = [float(np.sqrt(np.mean(f * f))) for f in buf[-n:]]
+        return n - int(np.argmin(rms))
 
     try:
         while True:
@@ -57,10 +69,13 @@ def segment(label, read_frame):
                 silence += FRAME_MS
             if voiced or buf:
                 buf.append(frame.astype(np.float32) / 32768.0)
+            dur = len(buf) * FRAME_MS / 1000
             if voiced and silence >= cfg.silence_end_ms:
                 flush()
-            elif len(buf) * FRAME_MS / 1000 >= cfg.max_segment_s:
-                flush()
+            elif voiced and dur >= cfg.soft_segment_s and silence >= cfg.soft_silence_ms:
+                flush()  # 十分に長くなったら、短い間でも区切る
+            elif dur >= cfg.max_segment_s:
+                flush(keep=quietest_tail())
             elif not voiced and len(buf) > 10:
                 buf = buf[-10:]  # keep a little lead-in before speech starts
     except EOFError:
@@ -151,6 +166,10 @@ def worker(translator, session_t0, recorder):
             print(json.dumps(ev, ensure_ascii=False), flush=True)
         else:
             print(f"[{label}] ({lang}) {text}\n    -> {out}   (asr {t1 - t0:.1f}s, mt {time.time() - t1:.1f}s)\n")
+        if args_debug:
+            now = time.time()
+            print(f"  [debug] delay: first word {now - seg_start:.1f}s, last word {now - seg_end:.1f}s, "
+                  f"audio {seg_end - seg_start:.1f}s", file=sys.stderr)
 
 
 def main():
