@@ -43,7 +43,15 @@
 
 - Apple Silicon の Mac(動作確認は M1 Max / 64GB)
 - [uv](https://docs.astral.sh/uv/)、ffmpeg
-- ディスク容量 約 7.2GB(モデル。初回起動時に `~/.cache/huggingface/` へダウンロード)
+- ディスク容量 約 7.2GB(モデル。初回起動時に `~/.cache/huggingface/` へダウンロード)。翻訳を 2B にするなら約 3.7GB
+- メモリの目安(起動して待機している状態のプロセスの実測。M1 Max / 64GB で測定):
+
+  | 翻訳モデル | プロセスのメモリ | 目安 |
+  |---|---|---|
+  | 2B(`pfnet/plamo-3-translate-2b-MLX-4bit`) | 約 4.3GB | 8GB 以上 |
+  | 8B(既定値) | 約 7.7GB | 16GB 以上 |
+
+  翻訳や文字起こしの実行中は、もう少し増えます。会議アプリやブラウザも同時に動かすので、余裕を見てください。目安の列は実機では確かめていません(測ったのは 64GB の Mac だけです)。31B は測っていません。
 - 相手の声を取るには [BlackHole](https://existential.audio/blackhole/)(仮想オーディオデバイス)
 
 ## セットアップ
@@ -209,6 +217,7 @@ cp config.example.toml config.toml
 | モデル | サイズ |
 |---|---|
 | `pfnet/plamo-3-translate-8b-MLX-4bit` | 約 5.7GB |
+| `pfnet/plamo-3-translate-2b-MLX-4bit`(2B に切り替えたとき) | 約 2.2GB |
 | `mlx-community/whisper-large-v3-turbo` | 約 1.5GB |
 
 削除するときは、`models--pfnet--plamo-3-translate-8b-MLX-4bit` と `models--mlx-community--whisper-large-v3-turbo` のディレクトリを消してください。次回起動時に再ダウンロードされます。
