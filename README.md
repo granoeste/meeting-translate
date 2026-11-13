@@ -28,7 +28,7 @@
 | ファイル | 役割 |
 |---|---|
 | `main.py` | 音声の取り込み、VAD による発話の切り出し、文字起こしと翻訳の実行、出力 |
-| `translate.py` | PLaMo 3 Translate による翻訳(`mlx-lm`) |
+| `translate.py` | 翻訳(`mlx-lm`)。PLaMo 3 Translate のほか、TranslateGemma と Hy-MT2 にも対応 |
 | `config.py` | 設定ファイル `config.toml` の読み込みと既定値 |
 | `output.py` | Web 画面と OBS 用の小さな HTTP サーバー(SSE) |
 | `transcript.py` | 会議後の `.txt` / `.srt` の書き出し |
@@ -44,11 +44,12 @@
 
 - Apple Silicon の Mac(動作確認は M1 Max / 64GB)
 - [uv](https://docs.astral.sh/uv/)、ffmpeg
-- ディスク容量 約 7.2GB(モデル。初回起動時に `~/.cache/huggingface/` へダウンロード)。翻訳を 2B にするなら約 3.7GB
+- ディスク容量 約 7.2GB(モデル。初回起動時に `~/.cache/huggingface/` へダウンロード)。翻訳を 2B にするなら約 3.7GB、0.8B にするなら約 2.4GB
 - メモリの目安(起動して待機している状態のプロセスの実測。M1 Max / 64GB で測定):
 
   | 翻訳モデル | プロセスのメモリ | 目安 |
   |---|---|---|
+  | 0.8B(`pfnet/plamo-3-translate-0.8b-MLX-4bit`) | 約 3.2GB | 8GB 以上 |
   | 2B(`pfnet/plamo-3-translate-2b-MLX-4bit`) | 約 4.3GB | 8GB 以上 |
   | 8B(既定値) | 約 7.7GB | 16GB 以上 |
 
@@ -196,7 +197,7 @@ cp config.example.toml config.toml
 | `whisper_model` | `"mlx-community/whisper-large-v3-turbo"` | Whisper のモデル |
 | `short_min_logprob` | `-1.0` | 2.5 秒未満の発話の平均 logprob がこれより低ければ、ハルシネーションとして捨てる(0 以下)。小さくすると本物の短い発話が残りやすく、大きくすると誤認識を捨てやすい |
 | `hallucinations` | `["thank you", ...]` | 2 秒未満の発話がこれと一致したら捨てる定番フレーズ |
-| `translate_model` | `"pfnet/plamo-3-translate-8b-MLX-4bit"` | 翻訳モデル。遅い場合は `...-2b-MLX-4bit`、品質重視なら `...-31b-MLX-4bit` |
+| `translate_model` | `"pfnet/plamo-3-translate-8b-MLX-4bit"` | 翻訳モデル。遅い場合は `...-2b-MLX-4bit`(さらに軽くするなら `...-0.8b-MLX-4bit`)、品質重視なら `...-31b-MLX-4bit` |
 | `pair` | `{ ja = "en", en = "ja" }` | 判定した言語 → 翻訳先の言語。ここに無い言語の発話は無視する |
 | `fixed_lang` | `{}` | 話者(`自分` / `相手`)ごとに言語を固定する。例: `{ "相手" = "en" }`。固定した話者は言語の自動判定をしない |
 
@@ -205,6 +206,24 @@ cp config.example.toml config.toml
 - 項目名の書き間違いや型の違い(数値の欄に文字列など)は、起動時にエラーになります。
 - 別のファイルを使うときは `--config PATH` で指定します。
 - `config.toml` は `.gitignore` に入っているので、コミットされません。
+
+## PLaMo 以外の翻訳モデル
+
+PLaMo 3 Translate のライセンス(商用利用は事前登録が必要)が合わないときは、`config.toml` の `translate_model` を差し替えます。モデル名に `translategemma` か `hy-mt` が入っていれば、そのモデルに合ったプロンプトで動きます。
+
+| モデル | `config.toml` の設定 | ライセンス | ディスク | 速度の目安(1 文) |
+|---|---|---|---|---|
+| Hy-MT2 1.8B(Tencent) | `translate_model = "mlx-community/Hy-MT2-1.8B-4bit"` | Apache-2.0 | 約 1.0GB | 約 0.2 秒 |
+| TranslateGemma 4B(Google) | `translate_model = "mlx-community/translategemma-4b-it-4bit"` | Gemma 利用規約 | 約 2.1GB | 約 0.4 秒 |
+
+モデルは初回起動時に Hugging Face からダウンロードされます。切り替えたら、起動して数文を訳し、訳を確かめてください。
+
+- **文脈は渡りません**: PLaMo では、直前の発話を `context` として渡して訳を揃えます。この 2 つのモデルには、その入口が無いので、1 文ずつ訳します。
+- **訳の質**: 過去の会議の 32 文を読み比べた印象です(自動の採点ではありません)。PLaMo のほうが自然でした。
+  - Hy-MT2 は、文末が常体になりやすく、意味の取り違えや、固有名の作り替えがありました。
+  - TranslateGemma は、「skills」を「能力」にするなど、IT の用語の誤訳が目立ちました。
+- **ライセンス**: Hy-MT2 は Apache-2.0 です(配布元の `LICENSE.txt` で確認)。TranslateGemma は Gemma の利用規約に従います。業務で使う前に、規約と社内の手続き(外部サービスの審査など)を確認してください。
+- 対応する言語は `pair` の `ja` と `en` だけです。
 
 ## 注意点
 
@@ -225,6 +244,7 @@ cp config.example.toml config.toml
 |---|---|
 | `pfnet/plamo-3-translate-8b-MLX-4bit` | 約 5.7GB |
 | `pfnet/plamo-3-translate-2b-MLX-4bit`(2B に切り替えたとき) | 約 2.2GB |
+| `pfnet/plamo-3-translate-0.8b-MLX-4bit`(0.8B に切り替えたとき) | 約 0.9GB |
 | `mlx-community/whisper-large-v3-turbo` | 約 1.5GB |
 
 削除するときは、`models--pfnet--plamo-3-translate-8b-MLX-4bit` と `models--mlx-community--whisper-large-v3-turbo` のディレクトリを消してください。次回起動時に再ダウンロードされます。

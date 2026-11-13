@@ -35,7 +35,7 @@ say -a "BlackHole 2ch" "テストです"             # 「相手」側にテス�
 - **`sender.py` の通信**はヘッダの無い生 PCM(16kHz・mono・int16、480 サンプルずつ)。`main.py` の `SR`/`FRAME` と合わせる。`sender.py` は会議用の Mac で単体で動かすので(PEP 723 のインライン依存)、プロジェクトの他のモジュールを import しない。
 - **設定**は `config.py` の `Config`(dataclass)が既定値で、`config.toml` に書いた項目だけが上書きする。型チェックは既定値の型を見ている。項目を足すときは、`Config`、`config.example.toml`、README の表の 3 か所を直す。`main.py` では、モジュールのグローバル変数 `cfg` を `main()` の中で読み込んだ値に置き換え、各関数は実行時に `cfg.xxx` を参照する。
 - **終了処理**: `main()` を抜ける前に `stopping` を立て、`capture` スレッドを join して音声ストリームを閉じる。`stream.read()` の中で待っているスレッドを残したまま終了すると、sounddevice が PortAudio を外した後にそのスレッドが落ちる(SIGSEGV)。PortAudio を使うスレッドを足すときも、同じく終了前に止める。
-- **翻訳**(`translate.py`)は、PLaMo の chat template に `source_lang`/`target_lang`/`context` を渡し、日本語にするときは `form="polite"` を付ける。`generate()` は遅かったので `stream_generate()` を使っている。
+- **翻訳**(`translate.py`)は、`translate_model` の名前でプロンプトを選ぶ。PLaMo は chat template に `source_lang`/`target_lang`/`context` を渡し、日本語にするときは `form="polite"` を付ける。名前に `translategemma` か `hy-mt` が入っていれば、それぞれの形式にする(どちらも `context` は使わない)。TranslateGemma は `<end_of_turn>` を終了トークンに足さないと、`max_tokens` まで出し続ける。`generate()` は遅かったので `stream_generate()` を使っている。
 
 ## 守ること
 
