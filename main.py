@@ -324,6 +324,12 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         pass
+    # 終了処理の途中でもう一度 Ctrl+C(や kill)が来ても、保存を最後までやり切る。
+    # 2 回目の Ctrl+C が下の join に刺さると、.txt/.srt を書かずに抜けてしまうため、ここで無視する。
+    # ここから下は capture/worker の join と plugins.close の timeout で頭打ちになり、最長でも数十秒で終わる。
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    log("終了します。保存が終わるまでお待ちください(Ctrl+C は効きません)...")
     # Close the audio streams before the interpreter exits. A thread still blocked in
     # stream.read() segfaults once sounddevice unloads PortAudio during shutdown.
     stopping.set()

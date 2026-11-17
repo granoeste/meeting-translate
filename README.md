@@ -154,7 +154,7 @@ say -v Samantha -a "BlackHole 2ch" "Hello, this is a test"
 | ファイル | `transcripts/YYYYmmdd-HHMMSS.{jsonl,txt,srt}` |
 
 - Web 画面と OBS の字幕は `web` プラグインです。何もしなくても起動します。Web サーバーは 127.0.0.1 のみで待ち受けるので、ネットワーク上の他の端末からは見えません。OBS の URL パラメータ、ポートの変え方、止め方は [plugins/web.md](plugins/web.md) にあります。
-- `.jsonl` は発話のたびに追記します。終了時(Ctrl+C か `kill`)に `.txt` と `.srt` を書き出します。強制終了した場合は、次のコマンドで再生成できます。
+- `.jsonl` は発話のたびに追記します。終了時(Ctrl+C か `kill`)に、保留中の発話を訳し切ってから `.txt` と `.srt` を書き出します。この保存の間は Ctrl+C を無視する(最長でも数十秒)ので、「終了します…」と出たらそのまま待ってください。それでも `.txt`/`.srt` が無いときは、`.jsonl` から再生成できます。
   ```
   uv run python transcript.py transcripts/xxxx.jsonl
   ```
