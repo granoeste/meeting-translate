@@ -1,0 +1,13 @@
+# 中継プラグイン(plugins/relay.py)の設定の見本です。plugins/relay.toml にコピーして値を書き換えてください。
+#   cp plugins/relay.example.toml plugins/relay.toml
+# plugins/relay.toml には送信トークンが入ります。コミットしないでください(.gitignore 済み)。
+# 中継(relay/)の置き方は、relay/README.md を見てください。
+
+# npx wrangler deploy のときに表示される Worker の URL。パス(閲覧キー)は付けません
+url = "https://meeting-relay.xxxx.workers.dev"
+
+# npx wrangler secret put PUBLISH_TOKEN で登録した送信トークン。知っていれば誰でも書き込めるので、公開しないでください
+token = "ここに送信トークンを書く"
+
+# 1 回の送信を待つ最長の秒数
+# timeout = 10

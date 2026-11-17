@@ -1,0 +1,20 @@
+# 会場の参加者に翻訳を見せる中継(Cloudflare Worker + Durable Object)の設定です。秘密の値は書きません。
+# 閲覧キーと送信トークンは wrangler secret で登録します(手元で試すときは relay/.dev.vars)。手順は relay/README.md を見てください。
+#   npx wrangler@4.156.2 deploy
+
+name = "meeting-relay"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+preview_urls = false
+
+# viewer.html を文字列として import する
+rules = [{ type = "Text", globs = ["**/*.html"], fallthrough = false }]
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

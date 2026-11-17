@@ -19,3 +19,8 @@ plugins.toml
 plugins/*.toml
 !plugins/*.example.toml
 !plugins/web.toml
+
+# 中継(relay/)を wrangler で動かしたときにできるもの。.dev.vars には手元で試すときの閲覧キーと送信トークンが入る
+relay/.wrangler/
+relay/.dev.vars
+relay/node_modules/

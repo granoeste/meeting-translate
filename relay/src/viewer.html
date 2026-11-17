@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Live Translation</title>
+<style>
+:root{color-scheme:dark;--bg:#111;--bar:#1d1d1d;--fg:#eee;--sub:#9a9a9a;--me:#4aa3ff;--other:#ffb84a;--ok:#3c3;--ng:#e44}
+@media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#fff;--bar:#f2f2f2;--fg:#111;--sub:#666;--me:#0b6bcb;--other:#b86e00;--ok:#1a8a1a;--ng:#c22}}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.55 system-ui,-apple-system,"Hiragino Sans",sans-serif}
+header{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:12px;
+padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));background:var(--bar);font-size:13px}
+header span:first-child{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#status{flex:none;white-space:nowrap}
+#status::before{content:"\25CF";margin-right:5px;color:var(--ng)}
+#status.on::before{color:var(--ok)}
+main{padding:14px 16px calc(88px + env(safe-area-inset-bottom))}
+.c{margin:0 0 18px;padding-left:11px;border-left:4px solid var(--other)}
+.c.me{border-color:var(--me)}
+.s{font-size:12px;color:var(--sub)}
+.t{font-size:21px;font-weight:600;overflow-wrap:anywhere}
+.o{color:var(--sub);overflow-wrap:anywhere}
+#empty{margin-top:30vh;text-align:center;color:var(--sub)}
+#new{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);display:none;
+padding:10px 20px;border:0;border-radius:999px;background:var(--me);color:#fff;font:600 15px system-ui,sans-serif;
+box-shadow:0 2px 8px rgba(0,0,0,.35)}
+#new.on{display:block}
+</style>
+<header><span>Live translation · 同時翻訳</span><span id="status">接続中 / Connecting</span></header>
+<main id="log"><p id="empty">発言を待っています… / Waiting for speech…</p></main>
+<button id="new" type="button">↓ 新しい発言 / New</button>
+<script>
+const log = document.getElementById('log'), empty = document.getElementById('empty');
+const statusEl = document.getElementById('status'), newBtn = document.getElementById('new');
+const LANG = {ja: '日本語', en: 'English'};
+const QUIET = 60000, PONG_WAIT = 5000; // 何も届かないまま QUIET ミリ秒たったら確かめる。PONG_WAIT 待っても返事が無ければつなぎ直す
+let lastSeq = 0, retry = 1000, ws = null, timer = 0, pongTimer = 0, lastRecv = Date.now(), wakeLock = null;
+
+const atBottom = () => innerHeight + scrollY >= document.documentElement.scrollHeight - 80;
+function toBottom() { scrollTo(0, document.documentElement.scrollHeight); newBtn.classList.remove('on'); }
+newBtn.onclick = toBottom;
+addEventListener('scroll', () => { if (atBottom()) newBtn.classList.remove('on'); }, {passive: true});
+
+function setStatus(on) {
+  statusEl.className = on ? 'on' : '';
+  statusEl.textContent = on ? '受信中 / Live' : '再接続中 / Reconnecting';
+}
+function items() { return log.querySelectorAll('.c'); }
+function clearAll() { items().forEach(d => d.remove()); lastSeq = 0; empty.hidden = false; }
+
+// 中継につなぐたびに最初に届く。切れている間に /clear されたり、中継を作り直したりした分の表示を消す
+function hello(m) {
+  if (m.latest < lastSeq) clearAll();
+  items().forEach(d => { if (m.oldest === null || +d.dataset.seq < m.oldest) d.remove(); });
+  if (!items().length) empty.hidden = false;
+}
+
+function add(e) {
+  if (e.seq <= lastSeq) return; // つなぎ直したときに同じ発言が来ても 2 度出さない
+  lastSeq = e.seq;
+  const stick = atBottom();
+  const d = document.createElement('div');
+  d.className = 'c' + (e.speaker === '自分' ? ' me' : '');
+  d.dataset.seq = e.seq;
+  const time = new Date(e.ts * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+  const dir = (LANG[e.lang] || e.lang) + ' → ' + (e.lang === 'ja' ? LANG.en : LANG.ja); // e.lang は原文の言語
+  for (const [cls, txt] of [['s', dir + ' · ' + time], ['t', e.translation], ['o', e.text]]) {
+    const x = document.createElement('div');
+    x.className = cls;
+    x.textContent = txt;
+    d.append(x);
+  }
+  empty.hidden = true;
+  log.append(d);
+  if (stick) toBottom(); else newBtn.classList.add('on'); // 読み返している途中は勝手にスクロールしない
+}
+
+function connect() {
+  clearTimeout(timer);
+  clearTimeout(pongTimer);
+  pongTimer = 0;
+  if (ws) { ws.onclose = null; ws.close(); }
+  const u = new URL('ws', location.href);
+  u.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  u.search = '?after=' + lastSeq;
+  const sock = ws = new WebSocket(u);
+  sock.onopen = () => { retry = 1000; setStatus(true); };
+  sock.onmessage = m => {
+    if (ws !== sock) return; // つなぎ直す前の接続から遅れて届いたもの
+    lastRecv = Date.now();
+    if (m.data === 'pong') { clearTimeout(pongTimer); pongTimer = 0; return; }
+    const e = JSON.parse(m.data);
+    if (e.type === 'event') add(e);
+    else if (e.type === 'hello') hello(e);
+    else if (e.type === 'clear') clearAll();
+  };
+  sock.onclose = () => {
+    if (ws !== sock) return;
+    setStatus(false);
+    timer = setTimeout(connect, retry);
+    retry = Math.min(retry * 2, 10000);
+  };
+}
+
+// 接続が生きているかを、中継に ping を送って確かめる。返事が来なければ、切れているとみなしてつなぎ直す。
+// 中継は眠ったまま pong を返すので、つなぎ直すよりずっと安い
+function ping() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || pongTimer) return;
+  ws.send('ping');
+  pongTimer = setTimeout(() => { pongTimer = 0; setStatus(false); retry = 1000; connect(); }, PONG_WAIT);
+}
+
+// 読んでいる間は画面を消さない(消えると、戻るたびに接続を確かめ直すことになる)。
+// ページが隠れると自動で外れるので、戻ったらかけ直す。iPhone はタップした後でないと断ることがあるので、タップでもかける
+function keepAwake() {
+  if (wakeLock || document.hidden || !navigator.wakeLock) return;
+  wakeLock = navigator.wakeLock.request('screen')
+    .then(lock => lock.addEventListener('release', () => { wakeLock = null; }))
+    .catch(() => { wakeLock = null; }); // 省電力モードなどで断られたら、画面は通常どおり消える
+}
+addEventListener('touchend', keepAwake, {passive: true});
+addEventListener('click', keepAwake);
+
+// スマホがスリープすると、接続が切れたことに気づけないことがある。戻ったら確かめる
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  keepAwake();
+  if (ws && ws.readyState === WebSocket.OPEN) ping();
+  else if (!ws || ws.readyState === WebSocket.CLOSED) { retry = 1000; connect(); }
+});
+// 休憩中など、しばらく何も届かないときも確かめる。切れたのに気づかないまま、止まって見えるのを防ぐ
+setInterval(() => { if (!document.hidden && Date.now() - lastRecv >= QUIET) ping(); }, 10000);
+addEventListener('online', () => { retry = 1000; connect(); });
+keepAwake();
+connect();
+</script>
+</html>
