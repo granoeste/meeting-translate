@@ -12,7 +12,7 @@
 - 直前の発話を文脈として翻訳に渡す
 - 出力先: 標準出力、Web 画面、OBS の字幕、会議後のテキスト・SRT
 - 出力先をプラグインで追加できる(見本: 発言ごとに Slack へ投稿)
-- 会場の参加者が、自分のスマホで翻訳を見られる(Cloudflare Workers の中継。限定公開の URL)
+- 会場の参加者が、自分のスマホで翻訳を見られる(Cloudflare Workers の中継。限定公開の URL。複数の会場を切り替えられる)
 - 別の Mac で行っている会議の音声を、LAN 越し(SSH トンネル)で受け取れる
 
 遅延は 1 発話あたり約 3 秒です(文字起こし 約2秒 + 翻訳 約1秒、M1 Max での実測)。
@@ -168,7 +168,7 @@ say -v Samantha -a "BlackHole 2ch" "Hello, this is a test"
 |---|---|---|
 | `web` | Web 画面と OBS の字幕。既定で有効 | [plugins/web.md](plugins/web.md) |
 | `slack` | 発言ごとに Slack へ投稿する(見本) | [plugins/slack.md](plugins/slack.md) |
-| `relay` | 会場の参加者が、自分のスマホで翻訳を見られる(Cloudflare Workers の中継。限定公開の URL) | [relay/README.md](relay/README.md) |
+| `relay` | 会場の参加者が、自分のスマホで翻訳を見られる(Cloudflare Workers の中継。限定公開の URL。複数の会場を切り替えられる) | [relay/README.md](relay/README.md) |
 
 使うプラグインの名前は `plugins.toml` に、プラグインごとの設定は `plugins/<名前>.toml` に書きます。`plugins.toml` が無いときは `plugins = ["web"]` とみなします。`plugins.toml` があるときは、そこに書いたものだけが動きます。見本は `plugins.example.toml` です。
 

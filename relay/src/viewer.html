@@ -13,6 +13,8 @@ body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.55 system-ui,-app
 header{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:12px;
 padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));background:var(--bar);font-size:13px}
 header span:first-child{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#ch{min-width:0;max-width:65%;padding:4px 6px;border:1px solid var(--sub);border-radius:6px;background:var(--bg);color:var(--fg);
+font:600 16px system-ui,-apple-system,"Hiragino Sans",sans-serif}
 #status{flex:none;white-space:nowrap}
 #status::before{content:"\25CF";margin-right:5px;color:var(--ng)}
 #status.on::before{color:var(--ok)}
@@ -28,10 +30,22 @@ padding:10px 20px;border:0;border-radius:999px;background:var(--me);color:#fff;f
 box-shadow:0 2px 8px rgba(0,0,0,.35)}
 #new.on{display:block}
 </style>
-<header><span>Live translation · 同時翻訳</span><span id="status">接続中 / Connecting</span></header>
+<header><span id="title">Live translation · 同時翻訳</span><select id="ch" hidden aria-label="会場 / Room"></select><span id="status">接続中 / Connecting</span></header>
 <main id="log"><p id="empty">発言を待っています… / Waiting for speech…</p></main>
 <button id="new" type="button">↓ 新しい発言 / New</button>
 <script>
+// 中継(index.js の viewer())が、いまの会場と会場の一覧を埋め込む: {channel, channels: [{id, name}]}
+const CONFIG = /*CONFIG*/null;
+const here = CONFIG.channels.find(c => c.id === CONFIG.channel);
+if (CONFIG.channels.length > 1) {
+  // 会場が 2 つ以上あるときだけ切り替えを出す。切り替えたらその会場のページを開き直す(表示と接続を混ぜない)
+  document.title = here.name + ' · Live Translation';
+  const sel = document.getElementById('ch');
+  for (const c of CONFIG.channels) sel.add(new Option(c.name, c.id, false, c.id === CONFIG.channel));
+  sel.onchange = () => { location.href = '../' + encodeURIComponent(sel.value) + '/'; };
+  sel.hidden = false;
+  document.getElementById('title').hidden = true;
+}
 const log = document.getElementById('log'), empty = document.getElementById('empty');
 const statusEl = document.getElementById('status'), newBtn = document.getElementById('new');
 const LANG = {ja: '日本語', en: 'English'};

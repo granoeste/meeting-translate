@@ -8,7 +8,7 @@
 #
 #   web    Web 画面と OBS の字幕(説明は plugins/web.md。plugins/web.toml でポートを変えられる)
 #   slack  発言ごとに Slack へ投稿する見本(説明は plugins/slack.md。plugins/slack.toml に Webhook の URL を書く)
-#   relay  会場の参加者がスマホで見られるよう、Cloudflare の中継に送る(手順は relay/README.md。plugins/relay.toml に URL とトークンを書く)
+#   relay  会場の参加者がスマホで見られるよう、Cloudflare の中継に送る(手順は relay/README.md。plugins/relay.toml に URL とトークンと会場を書く)
 #
 # 例: Slack にも流す           plugins = ["web", "slack"]
 #     会場の参加者にも見せる   plugins = ["web", "relay"]
