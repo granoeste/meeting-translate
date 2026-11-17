@@ -1,0 +1,4 @@
+# Web/OBS プラグイン(plugins/web.py)の設定です。待ち受けるのは 127.0.0.1 だけです(変えられません)。
+
+# Web 画面(http://127.0.0.1:<port>/)と OBS の字幕(http://127.0.0.1:<port>/caption)のポート
+port = 8765

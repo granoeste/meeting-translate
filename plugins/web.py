@@ -1,13 +1,19 @@
+"""Web 画面と OBS の字幕を出すプラグイン(既定で有効)。127.0.0.1 だけで待ち受ける小さな HTTP サーバー(SSE)。
+
+    /          話者別のログ
+    /caption   OBS のブラウザソース用の字幕(背景は透過)。?hold=5 で表示秒数、?orig=0 で原文を隠す
+    /events    発言の SSE
+
+plugins/web.toml:  port = 8765(無ければ 8765)
+"""
 import json
 import queue
+import sys
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_subscribers = set()
-_history = []
-_lock = threading.Lock()
-_seq = 0
+HOST = "127.0.0.1"  # LAN に公開しない。別の端末から見るときは SSH トンネルを使う
+BACKLOG = 50  # 後から開いたブラウザに送る、直近の発言の数
 
 LOG_PAGE = """<!doctype html><meta charset="utf-8"><title>Meeting Translate</title>
 <style>
@@ -69,10 +75,11 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def _stream(self):
+        out = self.server.output
         q = queue.Queue()
-        with _lock:
-            backlog = list(_history[-50:])
-            _subscribers.add(q)
+        with out.lock:
+            backlog = list(out.history)
+            out.subscribers.add(q)
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -91,32 +98,30 @@ class _Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:
-            with _lock:
-                _subscribers.discard(q)
+            with out.lock:
+                out.subscribers.discard(q)
 
 
-def start_server(port):
-    server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
-    server.daemon_threads = True
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server
+class Output:
+    def __init__(self, port=8765):
+        if type(port) is not int or not 0 < port < 65536:
+            raise ValueError(f"port は 1〜65535 の整数にしてください(値: {port!r})")
+        self.subscribers = set()
+        self.history = []
+        self.lock = threading.Lock()
+        self.server = ThreadingHTTPServer((HOST, port), _Handler)  # 使用中のポートなら OSError
+        self.server.daemon_threads = True
+        self.server.output = self
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        print(f"Web: http://{HOST}:{port}/   OBS: http://{HOST}:{port}/caption", file=sys.stderr, flush=True)
 
+    def write(self, ev):
+        with self.lock:
+            self.history.append(ev)
+            del self.history[:-BACKLOG]
+            for q in self.subscribers:
+                q.put(ev)
 
-def publish(speaker, lang, text, translation, start=None, end=None):
-    global _seq
-    with _lock:
-        _seq += 1
-        ev = {
-            "id": _seq,
-            "ts": time.time(),
-            "speaker": speaker,
-            "lang": lang,
-            "text": text,
-            "translation": translation,
-            "start": start,
-            "end": end,
-        }
-        _history.append(ev)
-        for q in _subscribers:
-            q.put(ev)
-    return ev
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()

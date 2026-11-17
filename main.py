@@ -15,7 +15,7 @@ import sounddevice as sd
 import webrtcvad
 
 import config
-import output
+import plugins
 from transcript import Recorder
 from translate import Translator
 
@@ -163,15 +163,20 @@ def worker(translator, session_t0, recorder):
     history = {}
     pending = {}  # 話者 -> 文の途中で終わった発話。次の発話と結合してから訳す
     hallucinations = {h.lower() for h in cfg.hallucinations}
+    seq = 0
 
     def emit(label, it):
+        nonlocal seq
         t1 = time.time()
         out = translator.translate(it["text"], it["lang"], context=history.get(label))
         history[label] = it["text"]
-        ev = output.publish(
-            label, it["lang"], it["text"], out,
-            start=max(0.0, it["start"] - session_t0), end=max(0.0, it["end"] - session_t0),
-        )
+        seq += 1
+        ev = {
+            "id": seq, "ts": time.time(), "speaker": label, "lang": it["lang"],
+            "text": it["text"], "translation": out,
+            "start": max(0.0, it["start"] - session_t0), "end": max(0.0, it["end"] - session_t0),
+        }
+        plugins.publish(ev)
         if recorder:
             recorder.write(ev)
         if jsonl:
@@ -251,8 +256,6 @@ def main():
     p.add_argument("--list", action="store_true")
     p.add_argument("--debug", action="store_true")
     p.add_argument("--jsonl", action="store_true", help="print one JSON object per line to stdout")
-    p.add_argument("--port", type=int, default=8765, help="web/OBS server port (127.0.0.1 only)")
-    p.add_argument("--no-web", action="store_true")
     p.add_argument("--no-mic", action="store_true", help="do not use this Mac's mic")
     p.add_argument("--remote-self", default="", metavar="HOST:PORT",
                    help="receive your own voice from sender.py on the meeting Mac")
@@ -264,6 +267,8 @@ def main():
                    help="also save each input's raw audio as .wav in --out-dir (to reproduce problems offline)")
     p.add_argument("--config", default="", metavar="PATH",
                    help="settings file (default: config.toml next to main.py, if it exists)")
+    p.add_argument("--plugins", default="", metavar="PATH",
+                   help="list of output plugins to use (default: plugins.toml next to main.py, if it exists)")
     a = p.parse_args()
     global args_debug, jsonl, cfg, audio_dir
     args_debug, jsonl = a.debug, a.jsonl
@@ -287,9 +292,8 @@ def main():
     log = (lambda *x: print(*x, file=sys.stderr, flush=True)) if jsonl else print
     if cfg_path:
         log(f"設定: {cfg_path}")
-    if not a.no_web:
-        output.start_server(a.port)
-        log(f"Web: http://127.0.0.1:{a.port}/   OBS: http://127.0.0.1:{a.port}/caption")
+    plugin_names, plugins_path = plugins.start(a.plugins or None)  # 設定の誤りは、モデルを読み込む前に止める
+    log(f"プラグイン: {', '.join(plugin_names) or 'なし'} ({plugins_path or '既定'})")
     log("モデルを読み込み中...")
     translator = Translator(cfg.translate_model, cfg.pair)
     mlx_whisper.transcribe(np.zeros(SR, np.float32), path_or_hf_repo=cfg.whisper_model)  # warm up
@@ -327,6 +331,7 @@ def main():
         t.join(timeout=2)
     segments.put(None)  # worker に、キューと保留中の発話を訳して終わるよう伝える
     worker_thread.join(timeout=15)
+    plugins.close()  # 最後の発言までプラグインに届けてから終わる
     if recorder:
         txt, srt = recorder.close()
         log(f"\n保存しました:\n  {txt}\n  {srt}")

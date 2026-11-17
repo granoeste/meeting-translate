@@ -1,0 +1,15 @@
+# 使う出力先プラグインの一覧の見本です。変えるときは plugins.toml にコピーして書き換えてください。
+#   cp plugins.example.toml plugins.toml
+# plugins.toml が無いときは plugins = ["web"] とみなします。plugins.toml があるときは、そこに書いたものだけが動きます。
+# plugins.toml は各自の設定なので、コミットしません(.gitignore 済み)。
+#
+# 名前は plugins/<名前>.py のファイル名です。各プラグインの設定は plugins/<名前>.toml に書きます。
+# 標準出力と transcripts/ への保存は、プラグインではないので、いつも動きます。
+#
+#   web    Web 画面と OBS の字幕(plugins/web.toml でポートを変えられる)
+#   slack  発言ごとに Slack へ投稿する見本(plugins/slack.toml に Webhook の URL を書く。見本は plugins/slack.example.toml)
+#
+# 例: Slack にも流す           plugins = ["web", "slack"]
+#     Web/OBS を起動しない     plugins = []
+
+plugins = ["web"]

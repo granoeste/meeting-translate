@@ -11,3 +11,11 @@ uv.lock
 
 # 各自の設定(見本は config.example.toml)
 config.toml
+
+# 使うプラグインの一覧(各自の設定。見本は plugins.example.toml)
+plugins.toml
+# プラグインごとの設定。Webhook の URL など秘密の値が入る(見本は plugins/<名前>.example.toml)
+# 秘密の値の無い web.toml だけはコミットする
+plugins/*.toml
+!plugins/*.example.toml
+!plugins/web.toml

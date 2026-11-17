@@ -1,6 +1,6 @@
 # meeting-translate
 
-会議の音声をリアルタイムで文字起こしし、日本語⇔英語に翻訳するツールです。すべてローカル(Apple Silicon の GPU)で動き、音声や文字を外部サービスに送りません。
+会議の音声をリアルタイムで文字起こしし、日本語⇔英語に翻訳するツールです。すべてローカル(Apple Silicon の GPU)で動きます。既定では、音声や文字を外部サービスに送りません。文字を送るのは、`plugins.toml` で自分で有効にした出力先(見本の Slack など)だけです。音声はどこにも送りません。
 
 - 文字起こし: [Whisper](https://github.com/openai/whisper) large-v3-turbo(`mlx-whisper`)
 - 翻訳: [PLaMo 3 Translate](https://www.preferred.jp/ja/blog/tech/plamo-3-translate-weight-release) 8B MLX-4bit(`mlx-lm`)
@@ -11,6 +11,7 @@
 - 言語は自動判定し、日本語なら英語へ、英語なら日本語へ翻訳する(日本語への翻訳は敬体)
 - 直前の発話を文脈として翻訳に渡す
 - 出力先: 標準出力、Web 画面、OBS の字幕、会議後のテキスト・SRT
+- 出力先をプラグインで追加できる(見本: 発言ごとに Slack へ投稿)
 - 別の Mac で行っている会議の音声を、LAN 越し(SSH トンネル)で受け取れる
 
 遅延は 1 発話あたり約 3 秒です(文字起こし 約2秒 + 翻訳 約1秒、M1 Max での実測)。
@@ -21,8 +22,8 @@
 マイク ────────────────┐
 (自分)                  │
                         ├→ VAD で発話に区切る → Whisper → 言語判定 → PLaMo 3 Translate ─┬→ 標準出力
-会議音声(BlackHole)  ┘   (webrtcvad)                                                   ├→ Web / OBS(SSE)
-(相手)                                                                                   └→ .jsonl / .txt / .srt
+会議音声(BlackHole)  ┘   (webrtcvad)                                                   ├→ .jsonl / .txt / .srt
+(相手)                                                                                   └→ プラグイン(既定は Web / OBS。Slack などを足せる)
 ```
 
 | ファイル | 役割 |
@@ -30,8 +31,10 @@
 | `main.py` | 音声の取り込み、VAD による発話の切り出し、文字起こしと翻訳の実行、出力 |
 | `translate.py` | 翻訳(`mlx-lm`)。PLaMo 3 Translate のほか、TranslateGemma と Hy-MT2 にも対応 |
 | `config.py` | 設定ファイル `config.toml` の読み込みと既定値 |
-| `output.py` | Web 画面と OBS 用の小さな HTTP サーバー(SSE) |
 | `transcript.py` | 会議後の `.txt` / `.srt` の書き出し |
+| `plugins/__init__.py` | 出力先プラグインの読み込みと配信(`plugins.toml`) |
+| `plugins/web.py` | Web 画面と OBS の字幕を出すプラグイン(小さな HTTP サーバー、SSE)。既定で有効 |
+| `plugins/slack.py` | 出力先プラグインの見本。発言ごとに Slack へ投稿する |
 | `sender.py` | 別の Mac で動かし、音声を LAN 越しに送る |
 | `check_audio.py` | BlackHole とマイクの音声の確認(ループバック判定、レベルメーター) |
 
@@ -143,17 +146,86 @@ say -v Samantha -a "BlackHole 2ch" "Hello, this is a test"
 | 出力先 | 方法 |
 |---|---|
 | 標準出力 | 通常は整形表示。`--jsonl` で 1 行 1 JSON(ログ類は stderr) |
-| Web 画面 | `http://127.0.0.1:8765/` に話者別のログが流れる |
-| OBS | ブラウザソースに `http://127.0.0.1:8765/caption` を指定。背景は透過で、最新の字幕を下部中央に表示 |
+| Web 画面(`web` プラグイン) | `http://127.0.0.1:8765/` に話者別のログが流れる |
+| OBS(`web` プラグイン) | ブラウザソースに `http://127.0.0.1:8765/caption` を指定。背景は透過で、最新の字幕を下部中央に表示 |
 | ファイル | `transcripts/YYYYmmdd-HHMMSS.{jsonl,txt,srt}` |
 
 - OBS の URL パラメータ: `?hold=5` で字幕の表示秒数(デフォルト 8 秒)、`?orig=0` で原文を非表示にして訳文のみ。ブラウザソースの大きさは 1920 × 1080 程度を推奨します。
+- Web 画面と OBS の字幕は `web` プラグインです。`plugins.toml` が無ければ有効なので、何もしなくても起動します。
+  - ポートを変えるときは、`plugins/web.toml` の `port = 8765` を書き換えます。
+  - 起動したくないときは、`cp plugins.example.toml plugins.toml` でコピーし、`plugins` から `"web"` を外します(例: `plugins = []`)。
 - Web サーバーは 127.0.0.1 のみで待ち受けます。ネットワーク上の他の端末からは見えません。
 - `.jsonl` は発話のたびに追記します。終了時(Ctrl+C か `kill`)に `.txt` と `.srt` を書き出します。強制終了した場合は、次のコマンドで再生成できます。
   ```
   uv run python transcript.py transcripts/xxxx.jsonl
   ```
 - SRT は、訳文(上段)と原文(下段)の 2 行字幕で、話者ラベルが付きます。時刻は、起動した瞬間を 00:00:00 とし、発話の区切り位置から逆算した近似値です。録画と合わせるときは、1 秒程度ずれることがあります。
+
+## 出力先を追加する(プラグイン)
+
+標準出力と `transcripts/` への保存のほかは、プラグインとして出しています。同梱しているのは `web`(Web 画面と OBS の字幕。既定で有効)と `slack`(見本)です。自分で書いたプラグインも足せます。
+
+使うプラグインの名前は `plugins.toml` に、プラグインごとの設定は `plugins/<名前>.toml` に書きます。`plugins.toml` が無いときは `plugins = ["web"]` とみなします。`plugins.toml` があるときは、そこに書いたものだけが動きます。見本は `plugins.example.toml` です。
+
+```
+plugins.toml          使うプラグインの一覧。例: plugins = ["web", "slack"]
+plugins/slack.py      プラグイン本体
+plugins/slack.toml    そのプラグインの設定(Webhook の URL など。無くてよいプラグインもある)
+```
+
+### Slack に流す(見本)
+
+`plugins/slack.py` は、発言ごとに、話者・訳・原文を 1 つのメッセージで投稿します。
+
+1. Slack で、投稿先のチャンネルの Incoming Webhook を作り、URL を控える。
+2. 使うプラグインを書く。
+   ```
+   cp plugins.example.toml plugins.toml
+   ```
+   `plugins.toml` を `plugins = ["web", "slack"]` に書き換える(Web/OBS が要らなければ `["slack"]`)。
+3. Slack の設定を書く。
+   ```
+   cp plugins/slack.example.toml plugins/slack.toml
+   ```
+   `plugins/slack.toml` の `webhook_url` を、控えた URL に書き換える。
+4. いつもどおり `main.py` を起動する。起動時に `プラグイン: web, slack (…/plugins.toml)` と表示されます。
+
+- 投稿が速すぎて Slack に断られた(HTTP 429)ときは、待ってから送り直します。
+- 使うプラグインの組み合わせを会議ごとに変えるときは、一覧のファイルを分けて `--plugins PATH` で指定します。
+
+### プラグインの書き方
+
+`plugins/<名前>.py` に `class Output` を置き、`plugins.toml` の `plugins` にその名前を足します。`plugins/<名前>.toml` があれば、その項目がそのまま `__init__` に渡ります(無ければ何も渡しません)。見本の設定を付けるときは `plugins/<名前>.example.toml` にします。
+
+```python
+class Output:
+    def __init__(self, **settings):  # plugins/<名前>.toml の項目。設定の誤りはここで例外にする
+        ...
+
+    def write(self, ev):  # 発言ごとに 1 回
+        # ev = {"id", "ts", "speaker", "lang", "text", "translation", "start", "end"}(.jsonl の 1 行と同じ)
+        ...
+
+    def close(self):  # 終了時に 1 回(無くてもよい)
+        ...
+```
+
+- `write()` は、プラグインごとの専用スレッドで、発言の順に呼ばれます。ネットワークを待つ処理を書いても、文字起こしと翻訳は止まりません。
+- `write()` や `close()` で例外が出ると、stderr に表示して続けます。会議は止まりません。
+- 終了時(Ctrl+C か `kill`)は、残りの発言を送り切ってから `close()` を呼びます。5 秒で終わらなければ、残りを送らずに終了します。
+- 次のときは、起動時(モデルを読み込む前)にエラーで止まります。
+  - `plugins.toml` や `plugins/<名前>.toml` の書き間違い
+  - `plugins` に書いたプラグインが無い
+  - `__init__` が例外を出した
+- 1 つのプラグインは 1 か所にしか出せません。2 つのチャンネルに流したいときは、プラグインのファイルを別の名前でもう 1 つ作ります(例: `plugins/slack_team.py` と `plugins/slack_team.toml`)。
+
+### 注意
+
+- `plugins/<名前>.toml` には Webhook の URL などの秘密の値が入るので、`.gitignore` に入れてあります。例外は、見本の `*.example.toml` と、秘密の値の無い `plugins/web.toml` です。Webhook の URL を知っていれば誰でも投稿できるので、公開しないでください。
+- `plugins.toml` は各自の設定なので、`.gitignore` に入れてあります。`plugins/web.toml` はリポジトリに入っているので、ポートを書き換えると Git では変更として表示されます。
+- 投稿先のチャンネルに誰がいるかを確認してください。会議の発言がそのまま流れます。社外の人が入っているチャンネル(Slack コネクト)にも注意してください。
+- プラグインは `main.py` と同じ権限で動きます。中身を確認したものだけを置いてください。
+- Slack 以外の外部サービスに送るプラグインを作るときは、社内の手続き(外部サービスの審査など)を確認してください。
 
 ## オプション
 
@@ -164,13 +236,12 @@ say -v Samantha -a "BlackHole 2ch" "Hello, this is a test"
 | `--system NAME` | ループバックデバイス名(デフォルト `BlackHole`) |
 | `--remote HOST:PORT` | `sender.py` から「相手」の声を受信する |
 | `--remote-self HOST:PORT` | `sender.py` から「自分」の声を受信する |
-| `--port N` | Web / OBS サーバーのポート(デフォルト 8765) |
-| `--no-web` | Web / OBS サーバーを起動しない |
 | `--jsonl` | 標準出力を JSON Lines にする |
 | `--out-dir DIR` | 保存先(デフォルト `transcripts`) |
 | `--no-record` | 保存しない |
 | `--save-audio` | 入力ごとの生の音声を `--out-dir` に `.wav` で保存する(「言葉が抜ける」などの問題を、あとで再現して調べるため)。会議の音声そのものが残るので、扱いに注意 |
 | `--config PATH` | 設定ファイル(省略時は `main.py` と同じ場所の `config.toml` があれば読む) |
+| `--plugins PATH` | 使う出力先プラグインの一覧のファイル(省略時は `main.py` と同じ場所の `plugins.toml` があれば読む) |
 | `--list` | 音声デバイスの一覧を表示して終了 |
 | `--debug` | 文字起こしの信頼度、遅延、フィルタで捨てた発話とその理由を stderr に表示 |
 

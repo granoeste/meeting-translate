@@ -1,0 +1,10 @@
+# Slack プラグイン(plugins/slack.py)の設定の見本です。plugins/slack.toml にコピーして値を書き換えてください。
+#   cp plugins/slack.example.toml plugins/slack.toml
+# plugins/slack.toml には Webhook の URL が入ります。コミットしないでください(.gitignore 済み)。
+
+# Incoming Webhook の URL。Slack のアプリの設定で、投稿先のチャンネルごとに作ります。
+# URL を知っていれば誰でも投稿できるので、公開しないでください
+webhook_url = "https://hooks.slack.com/services/XXXX/YYYY/ZZZZ"
+
+# 1 回の投稿を待つ最長の秒数
+# timeout = 10
