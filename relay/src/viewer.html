@@ -34,8 +34,16 @@ box-shadow:0 2px 8px rgba(0,0,0,.35)}
 <main id="log"><p id="empty">発言を待っています… / Waiting for speech…</p></main>
 <button id="new" type="button">↓ 新しい発言 / New</button>
 <script>
-// 中継(index.js の viewer())が、いまの会場と会場の一覧を埋め込む: {channel, channels: [{id, name}]}
+// 中継(index.js の viewer())が、いまの会場と会場の一覧を埋め込む: {channel, channels: [{id, name}], atRoot}
 const CONFIG = /*CONFIG*/null;
+if (!CONFIG) {
+  // 中継を通さずに開いたときなど。「接続中」のまま止まって見えないようにする
+  document.getElementById('status').textContent = '読み込めません / Failed to load';
+  throw new Error('CONFIG がありません。中継(index.js の viewer())から開いてください');
+}
+// /<VIEW_KEY>/ で開いたときは、中継が 1 つ目の会場のページをそのまま返す。URL を /<VIEW_KEY>/<会場>/ に直して、
+// 下の相対 URL(ws と ../<会場>/)や、再読み込み・ブックマークの行き先を、会場のページと同じにする
+if (CONFIG.atRoot) history.replaceState(null, '', encodeURIComponent(CONFIG.channel) + '/');
 const here = CONFIG.channels.find(c => c.id === CONFIG.channel);
 if (CONFIG.channels.length > 1) {
   // 会場が 2 つ以上あるときだけ切り替えを出す。切り替えたらその会場のページを開き直す(表示と接続を混ぜない)
@@ -43,6 +51,8 @@ if (CONFIG.channels.length > 1) {
   const sel = document.getElementById('ch');
   for (const c of CONFIG.channels) sel.add(new Option(c.name, c.id, false, c.id === CONFIG.channel));
   sel.onchange = () => { location.href = '../' + encodeURIComponent(sel.value) + '/'; };
+  // 戻るボタンなどでページが復元されると、前に選んだ会場がメニューに残っていることがある。いまの会場に戻す
+  addEventListener('pageshow', () => { sel.value = CONFIG.channel; });
   sel.hidden = false;
   document.getElementById('title').hidden = true;
 }

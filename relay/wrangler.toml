@@ -12,7 +12,7 @@ preview_urls = false
 rules = [{ type = "Text", globs = ["**/*.html"], fallthrough = false }]
 
 # 会場(チャンネル)の一覧。「ID:表示名」をカンマで区切る。例: "hall-a:Room A,hall-b:Room B"
-# ID は英小文字・数字・-(32 文字まで)。plugins/relay.toml の channel と、閲覧ページの URL(/<閲覧キー>/<ID>/)に使う。
+# ID は英小文字・数字・-(32 文字まで。ws は中継が URL に使うので使えない)。plugins/relay.toml の channel と、閲覧ページの URL(/<閲覧キー>/<ID>/)に使う。
 # 表示名は、会場が 2 つ以上あるときに閲覧ページの切り替えに出る(参加者に見える)。
 # 1 つ目の会場が、/<閲覧キー>/ を開いたときの既定。会場を変えたら deploy し直す。
 # "main" は、チャンネルが無かったころと同じ DO を使う(前の履歴が残る)。plugins/relay.toml の channel の既定も "main"。

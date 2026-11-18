@@ -10,6 +10,7 @@ import json
 import re
 import secrets
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -17,6 +18,8 @@ import urllib.request
 
 RETRY_FOR = 60  # 中継に届かないときに、1 件を送り直し続ける最長の秒数
 CHANNEL_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")  # relay/src/index.js の CHANNEL_ID と合わせる
+RESERVED_IDS = ("ws",)  # 形式は合っていても会場の ID にできない名前。relay/src/index.js の RESERVED_IDS と合わせる
+CHECK_WAIT = 5  # 起動時の確認で、中継の返事を待つ最長の秒数
 
 
 def _log(msg):
@@ -35,10 +38,15 @@ class Output:
             raise ValueError("token には、wrangler secret put PUBLISH_TOKEN で登録した送信トークン(16 文字以上)を書いてください")
         if type(timeout) not in (int, float) or timeout <= 0:
             raise ValueError(f"timeout は正の秒数にしてください(値: {timeout!r})")
-        if not isinstance(channel, str) or not CHANNEL_RE.fullmatch(channel):
+        if not isinstance(channel, str) or not CHANNEL_RE.fullmatch(channel) or channel in RESERVED_IDS:
             hint = ""
-            if isinstance(channel, str) and ":" in channel:  # CHANNELS の「ID:表示名」をそのまま書いたとき
-                hint = f"。表示名は付けず、ID だけを書きます(例: channel = {channel.split(':', 1)[0].strip()!r})"
+            if channel in RESERVED_IDS:
+                hint = f"。{channel!r} は中継が URL に使う名前なので、会場の ID にできません"
+            elif isinstance(channel, str) and ":" in channel:  # CHANNELS の「ID:表示名」をそのまま書いたとき
+                hint = "。表示名は付けず、ID だけを書きます"
+                head = channel.split(":", 1)[0].strip()
+                if CHANNEL_RE.fullmatch(head) and head not in RESERVED_IDS:  # そのまま使える ID のときだけ例を出す
+                    hint += f"(例: channel = {head!r})"
             raise ValueError("channel には、relay/wrangler.toml の CHANNELS に書いた会場の ID"
                              f"(英小文字・数字・-、32 文字まで)を書いてください(値: {channel!r}){hint}")
         self.channel = channel
@@ -65,7 +73,8 @@ class Output:
                     "wrangler secret の PUBLISH_TOKEN が同じか確かめてください")
         if code == 404:
             return (f"中継に会場 '{self.channel}' がありません。plugins/relay.toml の channel が "
-                    "relay/wrangler.toml の CHANNELS にあるか、中継を deploy し直したかを確かめてください")
+                    "relay/wrangler.toml の CHANNELS にあるか(書き方の誤った会場は、中継が飛ばします)、"
+                    "中継を deploy し直したかを確かめてください")
         return None
 
     def _check(self):
@@ -73,17 +82,36 @@ class Output:
 
         空の本文を送ると、中継は 401(トークン違い)/ 404(会場が無い)/ 400(設定は正しい)で答え、何も書き込まない。
         設定の誤りは ValueError にして起動を止める。中継にまだ届かない(起動前・回線断など)ときは、警告だけにして続ける。
+        名前解決には urlopen の timeout が効かず、会場の Wi-Fi などでは数十秒待つことがあるので、別のスレッドで送り、
+        wait 秒で返事が無ければ見切って起動を続ける(そのスレッドは daemon なので、終了を妨げない)。
         """
-        try:
-            self._post(b"", min(self.timeout, 5))
-        except urllib.error.HTTPError as e:
+        wait = min(self.timeout, CHECK_WAIT)
+        result = []
+
+        def probe():
+            try:
+                self._post(b"", wait)
+                result.append(None)
+            except Exception as e:  # 下で種類ごとに扱う
+                result.append(e)
+
+        t = threading.Thread(target=probe, name="relay-check", daemon=True)
+        t.start()
+        t.join(wait)
+        if not result:
+            _log(f"プラグイン relay: 中継から {wait:g} 秒たっても返事が無いため、会場とトークンを確かめられませんでした。発言は送ってみます")
+            return
+        e = result[0]
+        if isinstance(e, urllib.error.HTTPError):
             msg = self._errors(e.code)
             if msg:
                 raise ValueError(msg) from None
             if e.code != 400:
                 _log(f"プラグイン relay: 起動時の確認で、中継が {e.code} を返しました。発言は送ってみます")
-        except (OSError, http.client.HTTPException) as e:
+        elif isinstance(e, (OSError, http.client.HTTPException)):
             _log(f"プラグイン relay: 中継に届かないため、会場とトークンを確かめられませんでした({e})。発言は送ってみます")
+        elif e is not None:
+            raise e
 
     def write(self, ev):
         body = json.dumps({**ev, "session": self.session}, ensure_ascii=False).encode()
