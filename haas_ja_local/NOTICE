@@ -1,0 +1,21 @@
+haas-ja-local
+Copyright 2026 Basyauma Technologies LLC
+
+This product is an unofficial conversion and inference package. It is not
+affiliated with, endorsed by, or sponsored by Third Intelligence, Inc.
+本パッケージは非公式の変換・推論パッケージであり、Third Intelligence, Inc.とは
+提携・承認・後援の関係にありません。
+
+Original model:
+  third-intelligence/Haas-ja-v1.0
+  Copyright Third Intelligence, Inc.
+  Licensed under the Apache License, Version 2.0
+
+Reference implementations consulted:
+  Licensed under the Apache License, Version 2.0:
+  - NVIDIA NeMo
+  - third-intelligence/Haas-ASR
+  - matsuurajun/haas-mlx
+  - Sanami/haas-ja-onnx
+  Licensed under the MIT License:
+  - fla-org/flash-linear-attention

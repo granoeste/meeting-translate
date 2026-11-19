@@ -15,6 +15,7 @@ import sounddevice as sd
 import webrtcvad
 
 import config
+import haas
 import plugins
 from transcript import Recorder
 from translate import Translator
@@ -28,6 +29,7 @@ args_debug = False
 jsonl = False
 audio_dir = None  # --save-audio のとき、入力音声の wav を書き出すディレクトリ
 cfg = config.Config()  # main() で config.toml の値に置き換える
+haas_asr = None  # asr = "haas"(日本語モード)のとき、main() で haas.Haas を入れる
 stopping = threading.Event()  # set on exit so capture() closes its stream
 
 
@@ -204,11 +206,15 @@ def worker(translator, session_t0, recorder):
             return
         label, audio, seg_start, seg_end = job
         t0 = time.time()
-        fixed = cfg.fixed_lang.get(label)
-        r = mlx_whisper.transcribe(
-            audio, path_or_hf_repo=cfg.whisper_model, condition_on_previous_text=False,
-            language=fixed,
-        )
+        if haas_asr:  # 日本語モード。言語は判定せず、信頼度も無い(segs が空なので下の判定は飛ばす)
+            fixed = "ja"
+            r = {"text": haas_asr.transcribe(audio), "language": "ja"}
+        else:
+            fixed = cfg.fixed_lang.get(label)
+            r = mlx_whisper.transcribe(
+                audio, path_or_hf_repo=cfg.whisper_model, condition_on_previous_text=False,
+                language=fixed,
+            )
         t1 = time.time()
         text = r["text"].strip()
         lang = fixed or r.get("language")
@@ -270,7 +276,7 @@ def main():
     p.add_argument("--plugins", default="", metavar="PATH",
                    help="list of output plugins to use (default: plugins.toml next to main.py, if it exists)")
     a = p.parse_args()
-    global args_debug, jsonl, cfg, audio_dir
+    global args_debug, jsonl, cfg, audio_dir, haas_asr
     args_debug, jsonl = a.debug, a.jsonl
     if a.list:
         print(sd.query_devices())
@@ -296,7 +302,12 @@ def main():
     log(f"プラグイン: {', '.join(plugin_names) or 'なし'} ({plugins_path or '既定'})")
     log("モデルを読み込み中...")
     translator = Translator(cfg.translate_model, cfg.pair)
-    mlx_whisper.transcribe(np.zeros(SR, np.float32), path_or_hf_repo=cfg.whisper_model)  # warm up
+    if cfg.asr == "haas":  # 日本語モード。Whisper は読み込まない
+        log(f"文字起こし: {cfg.haas_model}(日本語モード)")
+        haas_asr = haas.Haas(cfg.haas_model)
+        haas_asr.transcribe(np.zeros(SR, np.float32))  # warm up
+    else:
+        mlx_whisper.transcribe(np.zeros(SR, np.float32), path_or_hf_repo=cfg.whisper_model)  # warm up
     recorder = None if a.no_record else Recorder(a.out_dir)
     session_t0 = time.time()
     worker_thread = threading.Thread(

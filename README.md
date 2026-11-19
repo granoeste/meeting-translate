@@ -2,7 +2,7 @@
 
 会議の音声をリアルタイムで文字起こしし、日本語⇔英語に翻訳するツールです。すべてローカル(Apple Silicon の GPU)で動きます。既定では、音声や文字を外部サービスに送りません。文字を送るのは、`plugins.toml` で自分で有効にした出力先(見本の Slack や、会場向けの中継 `relay`)だけです。音声はどこにも送りません。
 
-- 文字起こし: [Whisper](https://github.com/openai/whisper) large-v3-turbo(`mlx-whisper`)
+- 文字起こし: [Whisper](https://github.com/openai/whisper) large-v3-turbo(`mlx-whisper`)。日本語だけの会議では [Haas-ja-v1.0](https://third-intelligence.com/ja/posts/haas-ja-v1-release) も使えます([日本語モード](#日本語モードhaas))
 - 翻訳: [PLaMo 3 Translate](https://www.preferred.jp/ja/blog/tech/plamo-3-translate-weight-release) 8B MLX-4bit(`mlx-lm`)
 
 ## 機能
@@ -32,6 +32,8 @@
 | `main.py` | 音声の取り込み、VAD による発話の切り出し、文字起こしと翻訳の実行、出力 |
 | `translate.py` | 翻訳(`mlx-lm`)。PLaMo 3 Translate のほか、TranslateGemma と Hy-MT2 にも対応 |
 | `config.py` | 設定ファイル `config.toml` の読み込みと既定値 |
+| `haas.py` | 日本語モード(`asr = "haas"`)の文字起こし。Haas-ja-v1.0 を MLX で動かす |
+| `haas_ja_local/` | Haas-ja-v1.0 の MLX 推論コード([haas-ja-local](https://github.com/basyauma-tech/haas-ja-local) から同梱。Apache-2.0) |
 | `transcript.py` | 会議後の `.txt` / `.srt` の書き出し |
 | `plugins/__init__.py` | 出力先プラグインの読み込みと配信(`plugins.toml`) |
 | `plugins/web.py` | Web 画面と OBS の字幕を出すプラグイン(小さな HTTP サーバー、SSE)。既定で有効 |
@@ -225,7 +227,9 @@ cp config.example.toml config.toml
 | `merge_fragments` | `true` | 文の途中で終わった発話は、次の発話と結合してから訳す |
 | `merge_wait_s` | `4.0` | 結合のために次の発話を待つ最長の時間(秒)。来なければ、そのまま訳す |
 | `merge_max_s` | `12.0` | 結合した発話がこの長さ(秒)を超えたら、文が終わっていなくても訳す |
+| `asr` | `"whisper"` | 文字起こしのモデルの種類。`"haas"` で[日本語モード](#日本語モードhaas)になる |
 | `whisper_model` | `"mlx-community/whisper-large-v3-turbo"` | Whisper のモデル |
+| `haas_model` | `"basyauma-tech/Haas-ja-v1.0-mlx-8bit"` | 日本語モードで使う Haas のモデル(MLX に変換した版)。bf16 版は `"basyauma-tech/Haas-ja-v1.0-mlx"` |
 | `short_min_logprob` | `-1.0` | 2.5 秒未満の発話の平均 logprob がこれより低ければ、ハルシネーションとして捨てる(0 以下)。小さくすると本物の短い発話が残りやすく、大きくすると誤認識を捨てやすい |
 | `hallucinations` | `["thank you", ...]` | 2 秒未満の発話がこれと一致したら捨てる定番フレーズ |
 | `translate_model` | `"pfnet/plamo-3-translate-8b-MLX-4bit"` | 翻訳モデル。遅い場合は `...-2b-MLX-4bit`(さらに軽くするなら `...-0.8b-MLX-4bit`)、品質重視なら `...-31b-MLX-4bit` |
@@ -236,6 +240,23 @@ cp config.example.toml config.toml
 - 起動時に、読み込んだファイルのパスを表示します。
 - 項目名の書き間違いや型の違い(数値の欄に文字列など)は、起動時にエラーになります。
 - 別のファイルを使うときは `--config PATH` で指定します。
+
+## 日本語モード(Haas)
+
+全員が日本語で話す会議では、文字起こしを日本語専用の [Haas-ja-v1.0](https://huggingface.co/third-intelligence/Haas-ja-v1.0)(Third Intelligence、Apache-2.0)に切り替えられます。`config.toml` に次の 1 行を書きます。
+
+```toml
+asr = "haas"
+```
+
+- 全話者を日本語として扱い、英語に訳します。言語の自動判定はしません。英語の発言は、意味の無い日本語になります。日本語と英語が混じる会議では、既定の `asr = "whisper"` を使ってください。
+- 日本語モードでは Whisper を読み込みません。1 発話あたり 0.1〜0.6 秒でした(M1 / 16GB。同じ音声で Whisper turbo は約 6 秒)。メモリは約 0.8GB です。
+- 公式の Haas-ja-v1.0 は Linux と NVIDIA の GPU 向けで、Mac では動きません。そのため、有志が MLX に変換した [basyauma-tech/Haas-ja-v1.0-mlx-8bit](https://huggingface.co/basyauma-tech/Haas-ja-v1.0-mlx-8bit)(非公式、約 730MB)を、同じ作者の推論コード [haas-ja-local](https://github.com/basyauma-tech/haas-ja-local)(Apache-2.0)で動かします。推論コードは、MLX で使う部分だけを `haas_ja_local/` に同梱しています(元のパッケージは PyPI に無く、Python 3.12 限定と宣言しているため。3.13 でも同じ結果になることを確かめています)。
+- bf16 版(`haas_model = "basyauma-tech/Haas-ja-v1.0-mlx"`、約 1.2GB、メモリ約 1.2GB)も使えます。手元の試験では、8bit 版と同じ文字起こし結果でした。
+- 推論コードは、MLX がメモリ上に持つ再利用のためのキャッシュの上限を、プロセス全体で 1GiB に抑えます。翻訳モデルも同じプロセスで MLX を使うので、その上限が翻訳にも掛かります(手元の試験では、翻訳の時間は変わりませんでした)。
+- Whisper と違い、信頼度(`no_speech_prob` や logprob)が出ないので、短く信頼度の低い断片を捨てる処理は効きません。雑音から「うん」「グループ」などの短い語が出ることがあります。`hallucinations` に書いた語は、Whisper のときと同じく 2 秒未満の発話なら捨てます。
+- 句読点が付かない発話があります。末尾に `。` が無いと文の途中とみなし、次の発話と結合するまで(最長 `merge_wait_s`)訳を待つので、Whisper より字幕が遅れることがあります。
+- 「えー」「あの」などの言いよどみは文字になりません。漢字・かな・数字の書き方は選べません。
 
 ## PLaMo 以外の翻訳モデル
 
@@ -276,5 +297,7 @@ PLaMo 3 Translate のライセンス(商用利用は事前登録が必要)が合
 | `pfnet/plamo-3-translate-2b-MLX-4bit`(2B に切り替えたとき) | 約 2.2GB |
 | `pfnet/plamo-3-translate-0.8b-MLX-4bit`(0.8B に切り替えたとき) | 約 0.9GB |
 | `mlx-community/whisper-large-v3-turbo` | 約 1.5GB |
+
+日本語モードを使ったときは、`basyauma-tech/Haas-ja-v1.0-mlx-8bit`(約 730MB)も同じ場所にダウンロードされます。
 
 削除するときは、`models--pfnet--plamo-3-translate-8b-MLX-4bit` と `models--mlx-community--whisper-large-v3-turbo` のディレクトリを消してください。次回起動時に再ダウンロードされます。

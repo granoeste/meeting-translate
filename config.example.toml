@@ -20,6 +20,10 @@
 # merge_max_s = 12.0
 
 # --- 文字起こし(Whisper) ---
+# "haas" にすると日本語モード。全話者を日本語として Haas-ja-v1.0 で文字にし、英語に訳す(Whisper は読み込まない)
+# asr = "whisper"
+# 日本語モードで使う Haas のモデル(MLX に変換した版)。bf16 版は "basyauma-tech/Haas-ja-v1.0-mlx"
+# haas_model = "basyauma-tech/Haas-ja-v1.0-mlx-8bit"
 # whisper_model = "mlx-community/whisper-large-v3-turbo"
 # Whisper が無音やノイズから作りがちな定番フレーズ。2 秒未満の発話がこれと一致したら捨てる(大文字小文字は区別しない)
 # 2.5 秒未満の発話の平均 logprob がこれより低ければ、ハルシネーションとして捨てる(0 以下)。

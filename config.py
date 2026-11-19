@@ -5,6 +5,7 @@ from pathlib import Path
 
 DEFAULT_PATH = Path(__file__).with_name("config.toml")
 SPEAKERS = ("自分", "相手")  # main.py の話者ラベル
+ASR = ("whisper", "haas")
 NON_POSITIVE = ("short_min_logprob",)  # 0 以下の値を取る項目(それ以外の数値は正の数)
 
 
@@ -19,7 +20,9 @@ class Config:
     merge_wait_s: float = 4.0  # 結合のために待つ最長の時間。次の発話が来なければ、そのまま訳す
     merge_max_s: float = 12.0  # 結合した発話がこれより長くなったら、文が終わっていなくても訳す
     short_min_logprob: float = -1.0  # 2.5 秒未満の発話の平均 logprob がこれより低ければ、ハルシネーションとして捨てる(0 以下)
+    asr: str = "whisper"  # "whisper"(日英の自動判定)か "haas"(日本語モード。全話者を日本語として Haas で文字にする)
     whisper_model: str = "mlx-community/whisper-large-v3-turbo"
+    haas_model: str = "basyauma-tech/Haas-ja-v1.0-mlx-8bit"  # asr = "haas" のときのモデル(MLX に変換した版)
     # Whisper が無音やノイズから作りがちな定番フレーズ
     hallucinations: list = field(default_factory=lambda: [
         "thank you", "thanks for watching", "you", "bye", "ご視聴ありがとうございました", "ありがとうございました",
@@ -63,6 +66,13 @@ def load(path=None):
             raise SystemExit(f"{p}: '{key}' は正の数で指定してください(値: {value!r})")
         setattr(cfg, key, value)
 
+    if cfg.asr not in ASR:
+        raise SystemExit(f"{p}: 'asr' は {' / '.join(ASR)} で指定してください(値: {cfg.asr!r})")
+    if cfg.asr == "haas":
+        if "ja" not in cfg.pair:
+            raise SystemExit(f"{p}: asr = \"haas\"(日本語モード)では 'pair' に ja が要ります")
+        if any(lang != "ja" for lang in cfg.fixed_lang.values()):
+            raise SystemExit(f"{p}: asr = \"haas\"(日本語モード)では全話者が日本語なので、'fixed_lang' に ja 以外を書けません")
     for who, lang in cfg.fixed_lang.items():
         if who not in SPEAKERS:
             raise SystemExit(f"{p}: 'fixed_lang' の話者は {' / '.join(SPEAKERS)} で指定してください(値: {who!r})")
