@@ -236,7 +236,7 @@ def worker(translator, session_t0, recorder):
         if segs and len(audio) / SR < 2.5 and np.mean([s["avg_logprob"] for s in segs]) < cfg.short_min_logprob:
             drop("short and low confidence", text)
             continue
-        if len(audio) / SR < 2.0 and text.strip(" .!。！").lower() in hallucinations:
+        if len(audio) / SR < 2.0 and text.strip(" .!?。！？、,…").lower() in hallucinations:
             drop("hallucination phrase", text)
             continue
 

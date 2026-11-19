@@ -231,7 +231,7 @@ cp config.example.toml config.toml
 | `whisper_model` | `"mlx-community/whisper-large-v3-turbo"` | Whisper のモデル |
 | `haas_model` | `"basyauma-tech/Haas-ja-v1.0-mlx-8bit"` | 日本語モードで使う Haas のモデル(MLX に変換した版)。bf16 版は `"basyauma-tech/Haas-ja-v1.0-mlx"` |
 | `short_min_logprob` | `-1.0` | 2.5 秒未満の発話の平均 logprob がこれより低ければ、ハルシネーションとして捨てる(0 以下)。小さくすると本物の短い発話が残りやすく、大きくすると誤認識を捨てやすい |
-| `hallucinations` | `["thank you", ...]` | 2 秒未満の発話がこれと一致したら捨てる定番フレーズ |
+| `hallucinations` | `["thank you", ...]` | 2 秒未満の発話がこれと一致したら捨てる定番フレーズ(Whisper の幻覚と、Haas の「うん」などの相づち) |
 | `translate_model` | `"pfnet/plamo-3-translate-8b-MLX-4bit"` | 翻訳モデル。遅い場合は `...-2b-MLX-4bit`(さらに軽くするなら `...-0.8b-MLX-4bit`)、品質重視なら `...-31b-MLX-4bit` |
 | `pair` | `{ ja = "en", en = "ja" }` | 判定した言語 → 翻訳先の言語。ここに無い言語の発話は無視する |
 | `fixed_lang` | `{}` | 話者(`自分` / `相手`)ごとに言語を固定する。例: `{ "相手" = "en" }`。固定した話者は言語の自動判定をしない |
@@ -254,7 +254,7 @@ asr = "haas"
 - 公式の Haas-ja-v1.0 は Linux と NVIDIA の GPU 向けで、Mac では動きません。そのため、有志が MLX に変換した [basyauma-tech/Haas-ja-v1.0-mlx-8bit](https://huggingface.co/basyauma-tech/Haas-ja-v1.0-mlx-8bit)(非公式、約 730MB)を、同じ作者の推論コード [haas-ja-local](https://github.com/basyauma-tech/haas-ja-local)(Apache-2.0)で動かします。推論コードは、MLX で使う部分だけを `haas_ja_local/` に同梱しています(元のパッケージは PyPI に無く、Python 3.12 限定と宣言しているため。3.13 でも同じ結果になることを確かめています)。
 - bf16 版(`haas_model = "basyauma-tech/Haas-ja-v1.0-mlx"`、約 1.2GB、メモリ約 1.2GB)も使えます。手元の試験では、8bit 版と同じ文字起こし結果でした。
 - 推論コードは、MLX がメモリ上に持つ再利用のためのキャッシュの上限を、プロセス全体で 1GiB に抑えます。翻訳モデルも同じプロセスで MLX を使うので、その上限が翻訳にも掛かります(手元の試験では、翻訳の時間は変わりませんでした)。
-- Whisper と違い、信頼度(`no_speech_prob` や logprob)が出ないので、短く信頼度の低い断片を捨てる処理は効きません。雑音から「うん」「グループ」などの短い語が出ることがあります。`hallucinations` に書いた語は、Whisper のときと同じく 2 秒未満の発話なら捨てます。
+- Whisper と違い、信頼度(`no_speech_prob` や logprob)が出ないので、短く信頼度の低い断片を捨てる処理は効きません。雑音から「うん」「くー」「グループ」などの短い語が出ることがあります。`hallucinations` に書いた語(既定で「うん」「ん」「うーん」「あー」「えー」「え」と、雑音から出た「くー」「はしー」「ぴす」を含む)は、Whisper のときと同じく 2 秒未満の発話なら捨てます。足りない語は、`config.toml` の `hallucinations` に足してください(既定の一覧を置き換えるので、既定の語も書き直します)。
 - 句読点が付かない発話があります。末尾に `。` が無いと文の途中とみなし、次の発話と結合するまで(最長 `merge_wait_s`)訳を待つので、Whisper より字幕が遅れることがあります。
 - 「えー」「あの」などの言いよどみは文字になりません。漢字・かな・数字の書き方は選べません。
 

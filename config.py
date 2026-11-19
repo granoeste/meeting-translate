@@ -23,9 +23,10 @@ class Config:
     asr: str = "whisper"  # "whisper"(日英の自動判定)か "haas"(日本語モード。全話者を日本語として Haas で文字にする)
     whisper_model: str = "mlx-community/whisper-large-v3-turbo"
     haas_model: str = "basyauma-tech/Haas-ja-v1.0-mlx-8bit"  # asr = "haas" のときのモデル(MLX に変換した版)
-    # Whisper が無音やノイズから作りがちな定番フレーズ
+    # Whisper が無音やノイズから作りがちな定番フレーズと、Haas が雑音や相づちから出す短い語
     hallucinations: list = field(default_factory=lambda: [
         "thank you", "thanks for watching", "you", "bye", "ご視聴ありがとうございました", "ありがとうございました",
+        "うん", "ん", "うーん", "あー", "えー", "え", "くー", "はしー", "ぴす",
     ])
     translate_model: str = "pfnet/plamo-3-translate-8b-MLX-4bit"
     pair: dict = field(default_factory=lambda: {"ja": "en", "en": "ja"})  # 判定した言語 → 翻訳先

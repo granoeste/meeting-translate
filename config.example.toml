@@ -25,11 +25,11 @@
 # 日本語モードで使う Haas のモデル(MLX に変換した版)。bf16 版は "basyauma-tech/Haas-ja-v1.0-mlx"
 # haas_model = "basyauma-tech/Haas-ja-v1.0-mlx-8bit"
 # whisper_model = "mlx-community/whisper-large-v3-turbo"
-# Whisper が無音やノイズから作りがちな定番フレーズ。2 秒未満の発話がこれと一致したら捨てる(大文字小文字は区別しない)
+# Whisper が無音やノイズから作りがちな定番フレーズと、Haas(日本語モード)が雑音や相づちから出す短い語。2 秒未満の発話がこれと一致したら捨てる(大文字小文字は区別しない)
 # 2.5 秒未満の発話の平均 logprob がこれより低ければ、ハルシネーションとして捨てる(0 以下)。
 # 小さくする(-1.5 など)と本物の短い発話が残りやすく、大きくする(-0.7 など)と誤認識を捨てやすい
 # short_min_logprob = -1.0
-# hallucinations = ["thank you", "thanks for watching", "you", "bye", "ご視聴ありがとうございました", "ありがとうございました"]
+# hallucinations = ["thank you", "thanks for watching", "you", "bye", "ご視聴ありがとうございました", "ありがとうございました", "うん", "ん", "うーん", "あー", "えー", "え", "くー", "はしー", "ぴす"]
 
 # --- 翻訳(PLaMo 3 Translate) ---
 # 遅い場合は "pfnet/plamo-3-translate-2b-MLX-4bit"(さらに軽くするなら "pfnet/plamo-3-translate-0.8b-MLX-4bit")、品質重視なら "pfnet/plamo-3-translate-31b-MLX-4bit"
